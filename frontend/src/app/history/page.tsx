@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Header from "@/components/Header";
 import AuthModal from "@/components/AuthModal";
@@ -22,7 +22,7 @@ interface HistoryItem {
     };
 }
 
-export default function HistoryPage() {
+function HistoryContent() {
     const { user, loading: authLoading } = useAuth();
     const [history, setHistory] = useState<HistoryItem[]>([]);
     const [loading, setLoading] = useState(true);
@@ -181,5 +181,13 @@ export default function HistoryPage() {
                 message="Sign in to view and manage your identification history."
             />
         </>
+    );
+}
+
+export default function HistoryPage() {
+    return (
+        <Suspense fallback={<div className="main-content"><div className="text-center" style={{ padding: "var(--space-3xl)" }}><div className="dna-spinner" style={{ margin: "0 auto" }} /><p className="text-muted mt-md">Loading...</p></div></div>}>
+            <HistoryContent />
+        </Suspense>
     );
 }
