@@ -27,7 +27,13 @@ app = FastAPI(
 # CORS configuration for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "*"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "https://algae-production.up.railway.app",
+        "https://*.vercel.app",
+        "*",  # Temporarily allow all during initial deployment
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -162,6 +168,7 @@ async def get_history(limit: int = 20):
     }
 
 
+
 @app.delete("/api/history")
 async def clear_history():
     """Clear identification history."""
@@ -169,6 +176,151 @@ async def clear_history():
     return {"message": "History cleared"}
 
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+# ============================================================
+# Community Contribution Endpoints
+# ============================================================
+
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "haiming.peng@outlook.com")
+
+
+@app.post("/api/submit-species")
+async def submit_species(
+    file: UploadFile = File(...),
+    proposed_genus: str = "",
+    proposed_species: str = "",
+    location_found: str = "",
+    user_notes: str = "",
+    user_id: str = "",
+    user_email: str = "",
+    user_name: str = "",
+):
+    """
+    Submit a community species discovery for admin review.
+    Runs AI analysis and stores submission in Supabase.
+    """
+    from algae_database import get_supabase
+
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required to submit")
+
+    # Read uploaded image
+    image_bytes = await file.read()
+    if len(image_bytes) == 0:
+        raise HTTPException(status_code=400, detail="Empty file uploaded")
+
+    # Run AI analysis on the submitted image
+    ai_result = None
+    try:
+        ai_result = await identify_algae(image_bytes, file.filename or "submission.jpg")
+    except Exception as e:
+        print(f"AI analysis failed for submission: {e}")
+
+    # Upload image to Supabase Storage
+    image_url = None
+    try:
+        supabase = get_supabase()
+        file_ext = (file.filename or "jpg").split(".")[-1]
+        storage_path = f"submissions/{user_id}-{uuid.uuid4()}.{file_ext}"
+        supabase.storage.from_("algae_images").upload(storage_path, image_bytes)
+        image_url = supabase.storage.from_("algae_images").get_public_url(storage_path)
+    except Exception as e:
+        print(f"Image upload failed: {e}")
+
+    # Insert submission record
+    try:
+        supabase = get_supabase()
+        submission = {
+            "user_id": user_id,
+            "user_email": user_email,
+            "user_name": user_name or user_email,
+            "proposed_genus": proposed_genus or (ai_result.get("primary_identification", {}).get("genus", "Unknown") if ai_result else "Unknown"),
+            "proposed_species": proposed_species or (ai_result.get("primary_identification", {}).get("species", "") if ai_result else ""),
+            "location_found": location_found,
+            "user_notes": user_notes,
+            "image_url": image_url,
+            "ai_analysis": ai_result,
+            "status": "pending",
+        }
+        result = supabase.table("species_submissions").insert(submission).execute()
+        return {"success": True, "submission_id": result.data[0]["id"]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save submission: {str(e)}")
+
+
+@app.get("/api/admin/submissions")
+async def get_submissions(status: str = "pending", admin_email: str = ""):
+    """Get all species submissions (admin only)."""
+    from algae_database import get_supabase
+    if admin_email != ADMIN_EMAIL:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    try:
+        supabase = get_supabase()
+        result = supabase.table("species_submissions").select("*").eq("status", status).order("created_at", desc=True).execute()
+        return {"submissions": result.data, "total": len(result.data)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/admin/submissions/{submission_id}/approve")
+async def approve_submission(submission_id: str, admin_email: str = "", admin_notes: str = ""):
+    """Approve a submission and add it to the algae_species database."""
+    from algae_database import get_supabase
+    if admin_email != ADMIN_EMAIL:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    try:
+        supabase = get_supabase()
+        # Fetch the submission
+        sub = supabase.table("species_submissions").select("*").eq("id", submission_id).single().execute()
+        if not sub.data:
+            raise HTTPException(status_code=404, detail="Submission not found")
+        data = sub.data
+        ai = data.get("ai_analysis") or {}
+
+        # Write to algae_species table (will skip if genus already exists)
+        species_entry = {
+            "genus": data["proposed_genus"],
+            "common_species": [data["proposed_species"]] if data.get("proposed_species") else [],
+            "taxonomy": ai.get("taxonomy", {}),
+            "toxin": ai.get("toxin_risk", {}),
+            "ecology": ai.get("ecology", {}),
+            "description": ai.get("description", f"Community-contributed species. Submitted by {data.get('user_name', 'a community member')}."),
+            "morphology": ai.get("morphology", ""),
+            "reference_images": [data["image_url"]] if data.get("image_url") else [],
+        }
+        try:
+            supabase.table("algae_species").insert(species_entry).execute()
+        except Exception:
+            pass  # Species may already exist — that's OK
+
+        # Mark submission as approved
+        supabase.table("species_submissions").update({
+            "status": "approved",
+            "admin_notes": admin_notes,
+            "reviewed_by": admin_email,
+            "reviewed_at": datetime.now().isoformat(),
+        }).eq("id", submission_id).execute()
+
+        return {"success": True, "message": f"Approved and added {data['proposed_genus']} to the database"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/admin/submissions/{submission_id}/reject")
+async def reject_submission(submission_id: str, admin_email: str = "", admin_notes: str = ""):
+    """Reject a submission with optional feedback."""
+    from algae_database import get_supabase
+    if admin_email != ADMIN_EMAIL:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    try:
+        supabase = get_supabase()
+        supabase.table("species_submissions").update({
+            "status": "rejected",
+            "admin_notes": admin_notes,
+            "reviewed_by": admin_email,
+            "reviewed_at": datetime.now().isoformat(),
+        }).eq("id", submission_id).execute()
+        return {"success": True, "message": "Submission rejected"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

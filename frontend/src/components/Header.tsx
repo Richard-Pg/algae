@@ -55,6 +55,14 @@ export default function Header() {
                                     History
                                 </Link>
                             )}
+                            {user && !loading && (
+                                <Link
+                                    href="/contribute"
+                                    className={`nav-link ${pathname === "/contribute" ? "active" : ""}`}
+                                >
+                                    Contribute
+                                </Link>
+                            )}
                         </nav>
                         
                         <div className="header-auth">
