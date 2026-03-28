@@ -384,28 +384,56 @@ export default function HomePage() {
         />
 
         {/* Features Section */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: "var(--space-lg)", marginTop: "var(--space-3xl)" }}>
-          <div className="glass-card fade-in" style={{ animationDelay: "0.1s" }}>
-            <div style={{ fontSize: "2rem", marginBottom: "var(--space-md)" }}>🧬</div>
-            <h3 style={{ marginBottom: "var(--space-sm)" }}>Species Classification</h3>
-            <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem" }}>
-              Identify cyanobacteria, diatoms, green algae, and more — with confidence scores and alternative predictions.
-            </p>
-          </div>
-          <div className="glass-card fade-in" style={{ animationDelay: "0.2s" }}>
-            <div style={{ fontSize: "2rem", marginBottom: "var(--space-md)" }}>⚠️</div>
-            <h3 style={{ marginBottom: "var(--space-sm)" }}>Risk Assessment</h3>
-            <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem" }}>
-              Automatically flags harmful species with toxin data, risk levels, and health advisories when detected.
-            </p>
-          </div>
-          <div className="glass-card fade-in" style={{ animationDelay: "0.3s" }}>
-            <div style={{ fontSize: "2rem", marginBottom: "var(--space-md)" }}>🌊</div>
-            <h3 style={{ marginBottom: "var(--space-sm)" }}>Ecological Context</h3>
-            <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem" }}>
-              Understand habitat preferences, bloom conditions, and environmental indicators for each species.
-            </p>
-          </div>
+        <div className="features-grid">
+          {[
+            {
+              num: "01",
+              icon: (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>
+                </svg>
+              ),
+              accentClass: "feature-accent-blue",
+              iconClass: "feature-icon-blue",
+              title: "Species Classification",
+              desc: "Identify cyanobacteria, diatoms, green algae, and more — with confidence scores and alternative predictions.",
+              delay: "0.1s",
+            },
+            {
+              num: "02",
+              icon: (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+              ),
+              accentClass: "feature-accent-amber",
+              iconClass: "feature-icon-amber",
+              title: "Toxin Risk Assessment",
+              desc: "Automatically flags harmful species with toxin data, risk levels, and health advisories when detected.",
+              delay: "0.2s",
+            },
+            {
+              num: "03",
+              icon: (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/>
+                </svg>
+              ),
+              accentClass: "feature-accent-green",
+              iconClass: "feature-icon-green",
+              title: "Ecological Context",
+              desc: "Understand habitat preferences, bloom conditions, and environmental indicators for each species.",
+              delay: "0.3s",
+            },
+          ].map((f) => (
+            <div key={f.num} className={`feature-card-premium fade-in ${f.accentClass}`} style={{ animationDelay: f.delay }}>
+              <span className="feature-ghost-num">{f.num}</span>
+              <div className={`feature-icon-badge ${f.iconClass}`}>{f.icon}</div>
+              <h3 className="feature-title">{f.title}</h3>
+              <p className="feature-desc">{f.desc}</p>
+              <span className="feature-arrow">→</span>
+            </div>
+          ))}
         </div>
       </main>
     </>
