@@ -403,6 +403,56 @@ def _send_contribution_email(submission: dict):
         print(f"Contribution email notification failed: {e}")
 
 
+def _send_review_result_email(submission: dict, status: str, admin_notes: str = ""):
+    if not _smtp_configured():
+        print("Review result email skipped: SMTP settings are not configured")
+        return
+
+    recipient = (submission.get("user_email") or "").strip()
+    if not recipient:
+        print("Review result email skipped: submission has no contributor email")
+        return
+
+    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+    from_email = os.environ.get("SMTP_FROM_EMAIL") or os.environ.get("SMTP_USERNAME")
+    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    use_tls = _env_flag("SMTP_USE_TLS", True)
+
+    species_name = submission.get("proposed_genus") or "your algae submission"
+    if submission.get("proposed_species"):
+        species_name += f" {submission['proposed_species']}"
+
+    readable_status = "approved" if status == "approved" else "rejected"
+    subject_action = "approved" if status == "approved" else "reviewed"
+
+    message = EmailMessage()
+    message["Subject"] = f"Your AlgaeAI contribution was {subject_action}: {species_name}"
+    message["From"] = from_email
+    message["To"] = recipient
+    message.set_content(
+        "\n".join([
+            f"Your AlgaeAI contribution has been {readable_status}.",
+            "",
+            f"Species: {species_name}",
+            f"Status: {readable_status.title()}",
+            "",
+            "Reviewer notes:",
+            admin_notes.strip() or "No additional notes were provided.",
+            "",
+            f"View your contribution history: {frontend_url}/dashboard",
+        ])
+    )
+
+    try:
+        with smtplib.SMTP(os.environ["SMTP_HOST"], smtp_port, timeout=10) as server:
+            if use_tls:
+                server.starttls()
+            server.login(os.environ["SMTP_USERNAME"], os.environ["SMTP_PASSWORD"])
+            server.send_message(message)
+    except Exception as e:
+        print(f"Review result email failed: {e}")
+
+
 @app.post("/api/submit-species")
 async def submit_species(
     file: UploadFile = File(...),
@@ -542,13 +592,17 @@ async def approve_submission(
         else:
             supabase.table("algae_species").insert(species_entry).execute()
 
+        admin_notes = request.admin_notes.strip()
+
         # Mark submission as approved
         supabase.table("species_submissions").update({
             "status": "approved",
-            "admin_notes": request.admin_notes,
+            "admin_notes": admin_notes,
             "reviewed_by": getattr(admin_user, "email", ADMIN_EMAIL),
             "reviewed_at": datetime.now().isoformat(),
         }).eq("id", submission_id).execute()
+
+        _send_review_result_email(data, "approved", admin_notes)
 
         return {"success": True, "message": f"Approved and added {data['proposed_genus']} to the database"}
     except HTTPException:
@@ -567,12 +621,22 @@ async def reject_submission(
     from algae_database import get_supabase
     try:
         supabase = get_supabase()
+        sub = supabase.table("species_submissions").select("*").eq("id", submission_id).single().execute()
+        if not sub.data:
+            raise HTTPException(status_code=404, detail="Submission not found")
+
+        admin_notes = request.admin_notes.strip()
         supabase.table("species_submissions").update({
             "status": "rejected",
-            "admin_notes": request.admin_notes,
+            "admin_notes": admin_notes,
             "reviewed_by": getattr(admin_user, "email", ADMIN_EMAIL),
             "reviewed_at": datetime.now().isoformat(),
         }).eq("id", submission_id).execute()
+
+        _send_review_result_email(sub.data, "rejected", admin_notes)
+
         return {"success": True, "message": "Submission rejected"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
