@@ -11,13 +11,38 @@ interface HistoryItem {
   created_at: string;
   filename: string;
   image_url: string | null;
-  result: any;
+  result: {
+    identified?: boolean;
+    is_harmful?: boolean;
+    primary_identification?: {
+      genus?: string;
+      species?: string;
+    };
+  };
+}
+
+interface SubmissionItem {
+  id: string;
+  created_at: string;
+  proposed_genus: string;
+  proposed_species: string | null;
+  location_found: string | null;
+  image_url: string | null;
+  status: "pending" | "approved" | "rejected";
+  admin_notes: string | null;
 }
 
 export default function DashboardPage() {
   const { user, loading: authLoading, updateProfile } = useAuth();
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [stats, setStats] = useState({ total: 0, harmful: 0 });
+  const [submissions, setSubmissions] = useState<SubmissionItem[]>([]);
+  const [contributionStats, setContributionStats] = useState({
+    total: 0,
+    pending: 0,
+    approved: 0,
+    rejected: 0,
+  });
   const [loading, setLoading] = useState(true);
   
   // Profile editing state
@@ -35,9 +60,6 @@ export default function DashboardPage() {
       router.replace("/");
       return;
     }
-
-    // Set initial display name
-    setDisplayName(user.user_metadata?.display_name || "");
 
     const fetchDashboardData = async () => {
       setLoading(true);
@@ -73,6 +95,39 @@ export default function DashboardPage() {
           harmful: harmfulCount || 0 
         });
       }
+
+      const { data: submissionData, error: submissionError } = await supabase
+        .from("species_submissions")
+        .select("id, created_at, proposed_genus, proposed_species, location_found, image_url, status, admin_notes")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(6);
+
+      if (submissionError) {
+        console.error("Failed to fetch contribution data:", submissionError);
+      } else if (submissionData) {
+        const typedSubmissions = submissionData as SubmissionItem[];
+        setSubmissions(typedSubmissions);
+      }
+
+      const [
+        { count: contributionTotal },
+        { count: contributionPending },
+        { count: contributionApproved },
+        { count: contributionRejected },
+      ] = await Promise.all([
+        supabase.from("species_submissions").select("*", { count: "exact", head: true }).eq("user_id", user.id),
+        supabase.from("species_submissions").select("*", { count: "exact", head: true }).eq("user_id", user.id).eq("status", "pending"),
+        supabase.from("species_submissions").select("*", { count: "exact", head: true }).eq("user_id", user.id).eq("status", "approved"),
+        supabase.from("species_submissions").select("*", { count: "exact", head: true }).eq("user_id", user.id).eq("status", "rejected"),
+      ]);
+
+      setContributionStats({
+        total: contributionTotal || 0,
+        pending: contributionPending || 0,
+        approved: contributionApproved || 0,
+        rejected: contributionRejected || 0,
+      });
       setLoading(false);
     };
 
@@ -81,7 +136,8 @@ export default function DashboardPage() {
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (displayName.trim() === user?.user_metadata?.display_name) {
+    const currentDisplayName = user?.user_metadata?.display_name || "";
+    if (displayName.trim() === currentDisplayName) {
       setIsEditingProfile(false);
       return;
     }
@@ -110,9 +166,27 @@ export default function DashboardPage() {
   };
 
   const getInitials = () => {
-    const name = displayName || user?.email || "?";
+    const name = user?.user_metadata?.display_name || user?.email || "?";
     return name.charAt(0).toUpperCase();
   };
+
+  const getContributorBadge = (approved: number) => {
+    if (approved >= 25) {
+      return { label: "Algae Steward", icon: "🏆", detail: "25+ approved discoveries", className: "badge-gold" };
+    }
+    if (approved >= 10) {
+      return { label: "Field Expert", icon: "🌿", detail: "10+ approved discoveries", className: "badge-green" };
+    }
+    if (approved >= 3) {
+      return { label: "Community Contributor", icon: "🔬", detail: "3+ approved discoveries", className: "badge-blue" };
+    }
+    if (approved >= 1) {
+      return { label: "First Discovery", icon: "✨", detail: "1 approved discovery", className: "badge-silver" };
+    }
+    return { label: "Explorer", icon: "🧭", detail: "Submit discoveries to unlock badges", className: "badge-muted" };
+  };
+
+  const contributorBadge = getContributorBadge(contributionStats.approved);
 
   if (authLoading || (loading && user)) {
     return (
@@ -174,7 +248,7 @@ export default function DashboardPage() {
                   <label>Display Name</label>
                   <input 
                     type="text" 
-                    value={displayName}
+                    value={isEditingProfile ? displayName : (user.user_metadata?.display_name || "")}
                     onChange={(e) => setDisplayName(e.target.value)}
                     disabled={!isEditingProfile || isSaving}
                     placeholder="Enter your name"
@@ -192,10 +266,10 @@ export default function DashboardPage() {
                       <button 
                         type="button" 
                         className="upload-btn upload-btn-secondary" 
-                        onClick={() => {
-                          setDisplayName(user.user_metadata?.display_name || "");
-                          setIsEditingProfile(false);
-                        }}
+                    onClick={() => {
+                      setDisplayName(user.user_metadata?.display_name || "");
+                      setIsEditingProfile(false);
+                    }}
                         disabled={isSaving}
                         style={{ padding: "8px 16px", fontSize: "0.85rem" }}
                       >
@@ -214,7 +288,10 @@ export default function DashboardPage() {
                     <button 
                       type="button" 
                       className="upload-btn upload-btn-secondary" 
-                      onClick={() => setIsEditingProfile(true)}
+                      onClick={() => {
+                        setDisplayName(user.user_metadata?.display_name || "");
+                        setIsEditingProfile(true);
+                      }}
                       style={{ padding: "8px 16px", fontSize: "0.85rem" }}
                     >
                       ✏️ Edit Profile
@@ -244,10 +321,73 @@ export default function DashboardPage() {
               </div>
               <div className="dashboard-stat-icon">⚠️</div>
             </div>
+
+            <div className={`glass-card contributor-badge-card ${contributorBadge.className} fade-in`} style={{ animationDelay: "0.3s" }}>
+              <div className="contributor-badge-icon">{contributorBadge.icon}</div>
+              <div>
+                <div className="dashboard-stat-label">Contributor Badge</div>
+                <div className="contributor-badge-title">{contributorBadge.label}</div>
+                <div className="contributor-badge-detail">{contributorBadge.detail}</div>
+              </div>
+            </div>
           </div>
 
           {/* Right Column: Recent Activity */}
           <div className="dashboard-section">
+            <div className="glass-card">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "var(--space-sm)" }}>
+                <h3>Contribution History</h3>
+                <button onClick={() => router.push("/contribute")} className="link-btn" style={{ fontSize: "0.85rem" }}>
+                  Submit Discovery →
+                </button>
+              </div>
+
+              <div className="contribution-summary-grid">
+                <div><strong>{contributionStats.total}</strong><span>Total</span></div>
+                <div><strong>{contributionStats.pending}</strong><span>Pending</span></div>
+                <div><strong>{contributionStats.approved}</strong><span>Approved</span></div>
+                <div><strong>{contributionStats.rejected}</strong><span>Rejected</span></div>
+              </div>
+
+              {submissions.length === 0 ? (
+                <div className="dashboard-empty-state">
+                  <span>🌱</span>
+                  <p>No discoveries submitted yet.</p>
+                  <button onClick={() => router.push("/contribute")} className="link-btn mt-md">Share your first discovery</button>
+                </div>
+              ) : (
+                <div className="contribution-list">
+                  {submissions.map((item) => (
+                    <div key={item.id} className="contribution-item">
+                      <div className="contribution-thumb">
+                        {item.image_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={item.image_url} alt="Submitted specimen" />
+                        ) : (
+                          <span>🔬</span>
+                        )}
+                      </div>
+                      <div className="contribution-info">
+                        <div className="contribution-title">
+                          <em>{item.proposed_genus}</em>{item.proposed_species ? ` ${item.proposed_species}` : ""}
+                        </div>
+                        <div className="contribution-meta">
+                          Submitted {formatDate(item.created_at)}
+                          {item.location_found ? ` · ${item.location_found}` : ""}
+                        </div>
+                        {item.admin_notes && (
+                          <div className="contribution-note">{item.admin_notes}</div>
+                        )}
+                      </div>
+                      <span className={`contribution-status status-${item.status}`}>
+                        {item.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="glass-card" style={{ height: "100%", display: "flex", flexDirection: "column" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "var(--space-sm)" }}>
                 <h3>Recent Activity</h3>
@@ -267,7 +407,7 @@ export default function DashboardPage() {
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-md)", marginTop: "var(--space-lg)" }}>
                   {history.map(item => {
-                    const isHarmful = item.result?.primary_identification?.is_harmful;
+                    const isHarmful = item.result?.is_harmful;
                     return (
                       <div key={item.id} className="glass-card fade-in" style={{ padding: "var(--space-md)", display: "flex", alignItems: "center", gap: "var(--space-md)", cursor: "pointer" }}
                            onClick={() => {

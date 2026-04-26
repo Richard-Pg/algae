@@ -34,7 +34,7 @@ const compressImage = async (file: File): Promise<File> => {
 };
 
 export default function ContributePage() {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -66,6 +66,7 @@ export default function ContributePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) { setError("You must be signed in to contribute."); return; }
+    if (!session?.access_token) { setError("Your session has expired. Please sign in again."); return; }
     if (!selectedFile) { setError("Please upload an image."); return; }
     if (!proposedGenus.trim()) { setError("Please enter the genus name."); return; }
 
@@ -79,11 +80,14 @@ export default function ContributePage() {
       formData.append("proposed_species", proposedSpecies.trim());
       formData.append("location_found", locationFound.trim());
       formData.append("user_notes", userNotes.trim());
-      formData.append("user_id", user.id);
-      formData.append("user_email", user.email || "");
-      formData.append("user_name", user.user_metadata?.display_name || user.email || "");
 
-      const res = await fetch(`${API_BASE}/api/submit-species`, { method: "POST", body: formData });
+      const res = await fetch(`${API_BASE}/api/submit-species`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: formData,
+      });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail || "Submission failed");

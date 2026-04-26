@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
 import CameraModal from "@/components/CameraModal";
+import Footer from "@/components/Footer";
 import AuthModal from "@/components/AuthModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
@@ -87,9 +88,16 @@ export default function HomePage() {
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
   const [authMessage, setAuthMessage] = useState("");
+  const [anonymousUsage, setAnonymousUsage] = useState(0);
+  const [hasMounted, setHasMounted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const { user } = useAuth();
+
+  useEffect(() => {
+    setAnonymousUsage(getAnonymousUsage());
+    setHasMounted(true);
+  }, []);
 
   // Close auth modal when user logs in
   useEffect(() => {
@@ -188,7 +196,7 @@ export default function HomePage() {
 
       // Track anonymous usage
       if (!user) {
-        incrementAnonymousUsage();
+        setAnonymousUsage(incrementAnonymousUsage());
       }
 
       // Set default image url (Base64 for anonymous users)
@@ -343,11 +351,11 @@ export default function HomePage() {
         )}
 
         {/* Anonymous usage notice */}
-        {!user && (
+        {!user && hasMounted && (
           <div className="usage-notice mt-lg fade-in">
             <p>
-              🔓 {FREE_USAGE_LIMIT - getAnonymousUsage() > 0
-                ? `${FREE_USAGE_LIMIT - getAnonymousUsage()} free identification${FREE_USAGE_LIMIT - getAnonymousUsage() === 1 ? "" : "s"} remaining`
+              🔓 {FREE_USAGE_LIMIT - anonymousUsage > 0
+                ? `${FREE_USAGE_LIMIT - anonymousUsage} free identification${FREE_USAGE_LIMIT - anonymousUsage === 1 ? "" : "s"} remaining`
                 : "Free identifications used"
               } ·{" "}
               <button
@@ -436,6 +444,7 @@ export default function HomePage() {
           ))}
         </div>
       </main>
+      <Footer />
     </>
   );
 }

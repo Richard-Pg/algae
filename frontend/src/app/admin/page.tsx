@@ -23,8 +23,14 @@ interface Submission {
   created_at: string;
 }
 
+interface NotificationSettings {
+  enabled: boolean;
+  configured: boolean;
+  recipient: string;
+}
+
 export default function AdminPage() {
-  const { user, loading } = useAuth();
+  const { user, session, loading } = useAuth();
   const router = useRouter();
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [statusFilter, setStatusFilter] = useState("pending");
@@ -32,35 +38,93 @@ export default function AdminPage() {
   const [actionNotes, setActionNotes] = useState<Record<string, string>>({});
   const [processing, setProcessing] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings | null>(null);
+  const [settingsSaving, setSettingsSaving] = useState(false);
 
-  const isAdmin = user?.email === ADMIN_EMAIL;
+  const isAdmin = user?.email?.trim().toLowerCase() === ADMIN_EMAIL.trim().toLowerCase();
 
   const fetchSubmissions = async () => {
     if (!isAdmin) return;
+    if (!session?.access_token) {
+      setFetchError("Waiting for your admin session...");
+      return;
+    }
     setFetchError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/admin/submissions?status=${statusFilter}&admin_email=${encodeURIComponent(user!.email!)}`);
-      if (!res.ok) throw new Error("Failed to fetch");
+      const res = await fetch(`${API_BASE}/api/admin/submissions?status=${statusFilter}`, {
+        headers: {
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Backend returned ${res.status}`);
+      }
       const data = await res.json();
       setSubmissions(data.submissions);
+    } catch (err) {
+      setFetchError(err instanceof Error ? `Failed to load submissions: ${err.message}` : "Failed to load submissions.");
+    }
+  };
+
+  const fetchNotificationSettings = async () => {
+    if (!isAdmin || !session?.access_token) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/notification-settings`, {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+      if (!res.ok) throw new Error("Failed to fetch notification settings");
+      setNotificationSettings(await res.json());
     } catch {
-      setFetchError("Failed to load submissions. Make sure the backend is running.");
+      setNotificationSettings(null);
     }
   };
 
   useEffect(() => {
-    if (isAdmin) fetchSubmissions();
+    if (isAdmin) {
+      fetchSubmissions();
+      fetchNotificationSettings();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin, statusFilter]);
+  }, [isAdmin, statusFilter, session?.access_token]);
+
+  const handleToggleNotifications = async () => {
+    if (!session?.access_token || !notificationSettings) return;
+    setSettingsSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/notification-settings`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ enabled: !notificationSettings.enabled }),
+      });
+      if (!res.ok) throw new Error("Failed to save notification settings");
+      setNotificationSettings(await res.json());
+    } catch {
+      alert("Failed to update email notification settings.");
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
 
   const handleAction = async (id: string, action: "approve" | "reject") => {
+    if (!session?.access_token) {
+      alert("Your session has expired. Please sign in again.");
+      return;
+    }
     setProcessing(id);
     try {
       const res = await fetch(`${API_BASE}/api/admin/submissions/${id}/${action}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
         body: JSON.stringify({
-          admin_email: user?.email,
           admin_notes: actionNotes[id] || "",
         }),
       });
@@ -105,6 +169,28 @@ export default function AdminPage() {
             Review, approve, or reject community-submitted species discoveries.
           </p>
         </section>
+
+        {notificationSettings && (
+          <section className="glass-card" style={{ marginBottom: "var(--space-xl)", padding: "var(--space-lg)", display: "flex", justifyContent: "space-between", gap: "var(--space-md)", alignItems: "center", flexWrap: "wrap" }}>
+            <div>
+              <h2 style={{ fontFamily: "var(--font-serif)", fontSize: "1.25rem", marginBottom: "var(--space-xs)" }}>
+                Email Notifications
+              </h2>
+              <p style={{ color: "var(--text-secondary)", margin: 0 }}>
+                New contribution alerts are sent to {notificationSettings.recipient}.
+                {!notificationSettings.configured && " SMTP is not configured yet."}
+              </p>
+            </div>
+            <button
+              type="button"
+              className={notificationSettings.enabled ? "btn-primary" : "btn-secondary"}
+              disabled={settingsSaving}
+              onClick={handleToggleNotifications}
+            >
+              {settingsSaving ? "Saving..." : notificationSettings.enabled ? "Email Alerts On" : "Email Alerts Off"}
+            </button>
+          </section>
+        )}
 
         {/* Filter Tabs */}
         <div className="admin-tabs">

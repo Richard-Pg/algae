@@ -6,12 +6,15 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import AuthModal from "@/components/AuthModal";
 
+const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL || "haiming.peng@outlook.com";
+
 export default function Header() {
     const pathname = usePathname();
     const { user, loading, signOut } = useAuth();
     const [showAuth, setShowAuth] = useState(false);
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const isAdmin = user?.email?.trim().toLowerCase() === ADMIN_EMAIL.trim().toLowerCase();
 
     // Close dropdown when clicking outside
     useEffect(() => {
@@ -57,10 +60,26 @@ export default function Header() {
                             )}
                             {user && !loading && (
                                 <Link
+                                    href="/dashboard"
+                                    className={`nav-link ${pathname === "/dashboard" ? "active" : ""}`}
+                                >
+                                    Dashboard
+                                </Link>
+                            )}
+                            {user && !loading && (
+                                <Link
                                     href="/contribute"
                                     className={`nav-link ${pathname === "/contribute" ? "active" : ""}`}
                                 >
                                     Contribute
+                                </Link>
+                            )}
+                            {isAdmin && !loading && (
+                                <Link
+                                    href="/admin"
+                                    className={`nav-link ${pathname === "/admin" ? "active" : ""}`}
+                                >
+                                    Admin
                                 </Link>
                             )}
                         </nav>
@@ -99,6 +118,15 @@ export default function Header() {
                                             >
                                                 🗂️ My History
                                             </Link>
+                                            {isAdmin && (
+                                                <Link 
+                                                    href="/admin" 
+                                                    className="dropdown-item"
+                                                    onClick={() => setDropdownOpen(false)}
+                                                >
+                                                    🛡️ Admin Review
+                                                </Link>
+                                            )}
                                             <div className="dropdown-divider"></div>
                                             <button 
                                                 className="dropdown-item text-danger"
