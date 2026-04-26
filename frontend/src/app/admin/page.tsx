@@ -29,6 +29,12 @@ interface NotificationSettings {
   recipient: string;
 }
 
+const formatConfidence = (value: unknown) => {
+  if (typeof value !== "number" || Number.isNaN(value)) return "—";
+  const percent = value <= 1 ? value * 100 : value;
+  return `${Math.round(percent)}%`;
+};
+
 export default function AdminPage() {
   const { user, session, loading } = useAuth();
   const router = useRouter();
@@ -259,7 +265,7 @@ export default function AdminPage() {
                           <div className="admin-detail-label">AI Analysis</div>
                           <div className="admin-ai-summary">
                             <div><strong>Identified as:</strong> {(sub.ai_analysis as Record<string, {genus?: string}>).primary_identification?.genus ?? "—"}</div>
-                            <div><strong>Confidence:</strong> {(sub.ai_analysis as Record<string, {confidence?: number}>).primary_identification?.confidence ?? "—"}%</div>
+                            <div><strong>Confidence:</strong> {formatConfidence((sub.ai_analysis as Record<string, {confidence?: number}>).primary_identification?.confidence)}</div>
                             <div><strong>Description:</strong> {(sub.ai_analysis as Record<string, string>).description ?? "—"}</div>
                           </div>
                         </div>
