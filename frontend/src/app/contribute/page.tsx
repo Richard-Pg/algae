@@ -7,6 +7,13 @@ import { useAuth } from "@/contexts/AuthContext";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+const toxinPresenceOptions = ["Yes", "No", "Unknown"];
+const riskLevelOptions = ["None", "Low", "Medium", "High", "Unknown"];
+const waterTypeOptions = ["Freshwater", "Marine", "Brackish", "Terrestrial", "Mixed/Variable", "Unknown"];
+const confidenceOptions = ["High", "Moderate", "Low", "Uncertain"];
+const sampleTypeOptions = ["Freshwater bloom", "Marine sample", "Brackish sample", "Lab culture", "Surface water", "Field sample", "Other"];
+const microscopyOptions = ["Brightfield", "Phase contrast", "DIC", "Fluorescence", "SEM", "Light microscopy", "Unknown"];
+
 const compressImage = async (file: File): Promise<File> => {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -258,8 +265,11 @@ export default function ContributePage() {
             <div className="contribute-fields-row">
               <div className="contribute-field">
                 <label htmlFor="produces-toxin">Produces toxin?</label>
-                <input id="produces-toxin" type="text" className="contribute-input" placeholder="yes/no/unknown"
-                  value={toxin.produces_toxin} onChange={(e) => setToxin({ ...toxin, produces_toxin: e.target.value })} />
+                <select id="produces-toxin" className="contribute-input"
+                  value={toxin.produces_toxin} onChange={(e) => setToxin({ ...toxin, produces_toxin: e.target.value })}>
+                  <option value="">Select...</option>
+                  {toxinPresenceOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                </select>
               </div>
               <div className="contribute-field">
                 <label htmlFor="toxin-type">Toxin type</label>
@@ -268,8 +278,11 @@ export default function ContributePage() {
               </div>
               <div className="contribute-field">
                 <label htmlFor="risk-level">Risk level</label>
-                <input id="risk-level" type="text" className="contribute-input" placeholder="None/Low/Medium/High"
-                  value={toxin.risk_level} onChange={(e) => setToxin({ ...toxin, risk_level: e.target.value })} />
+                <select id="risk-level" className="contribute-input"
+                  value={toxin.risk_level} onChange={(e) => setToxin({ ...toxin, risk_level: e.target.value })}>
+                  <option value="">Select...</option>
+                  {riskLevelOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                </select>
               </div>
               <div className="contribute-field">
                 <label htmlFor="health-effects">Health effects</label>
@@ -280,7 +293,20 @@ export default function ContributePage() {
 
             <div className="admin-detail-label" style={{ marginTop: "var(--space-lg)" }}>Ecology</div>
             <div className="contribute-fields-row">
-              {(["habitat", "water_type", "bloom_conditions", "temperature_range", "indicator_of"] as const).map((key) => (
+              <div className="contribute-field">
+                <label htmlFor="ecology-habitat">habitat</label>
+                <input id="ecology-habitat" type="text" className="contribute-input"
+                  value={ecology.habitat} onChange={(e) => setEcology({ ...ecology, habitat: e.target.value })} />
+              </div>
+              <div className="contribute-field">
+                <label htmlFor="ecology-water-type">water type</label>
+                <select id="ecology-water-type" className="contribute-input"
+                  value={ecology.water_type} onChange={(e) => setEcology({ ...ecology, water_type: e.target.value })}>
+                  <option value="">Select...</option>
+                  {waterTypeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                </select>
+              </div>
+              {(["bloom_conditions", "temperature_range", "indicator_of"] as const).map((key) => (
                 <div className="contribute-field" key={key}>
                   <label htmlFor={`ecology-${key}`}>{key.replaceAll("_", " ")}</label>
                   <input id={`ecology-${key}`} type="text" className="contribute-input"
@@ -337,13 +363,19 @@ export default function ContributePage() {
             <div className="contribute-fields-row" style={{ marginTop: "var(--space-md)" }}>
               <div className="contribute-field">
                 <label htmlFor="microscopy-method">Microscopy method (optional)</label>
-                <input id="microscopy-method" type="text" className="contribute-input" placeholder="e.g. brightfield, 1000x, Lugol preserved"
-                  value={microscopyMethod} onChange={(e) => setMicroscopyMethod(e.target.value)} />
+                <select id="microscopy-method" className="contribute-input"
+                  value={microscopyMethod} onChange={(e) => setMicroscopyMethod(e.target.value)}>
+                  <option value="">Select...</option>
+                  {microscopyOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                </select>
               </div>
               <div className="contribute-field">
                 <label htmlFor="contributor-confidence">Your confidence (optional)</label>
-                <input id="contributor-confidence" type="text" className="contribute-input" placeholder="e.g. high, moderate, uncertain"
-                  value={contributorConfidence} onChange={(e) => setContributorConfidence(e.target.value)} />
+                <select id="contributor-confidence" className="contribute-input"
+                  value={contributorConfidence} onChange={(e) => setContributorConfidence(e.target.value)}>
+                  <option value="">Select...</option>
+                  {confidenceOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                </select>
               </div>
             </div>
             <div className="contribute-fields-row" style={{ marginTop: "var(--space-md)" }}>
@@ -354,8 +386,11 @@ export default function ContributePage() {
               </div>
               <div className="contribute-field">
                 <label htmlFor="sample-type">Sample type (optional)</label>
-                <input id="sample-type" type="text" className="contribute-input" placeholder="e.g. freshwater bloom, lab culture, marine sample"
-                  value={sampleType} onChange={(e) => setSampleType(e.target.value)} />
+                <select id="sample-type" className="contribute-input"
+                  value={sampleType} onChange={(e) => setSampleType(e.target.value)}>
+                  <option value="">Select...</option>
+                  {sampleTypeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                </select>
               </div>
             </div>
             <div className="contribute-field" style={{ marginTop: "var(--space-md)" }}>
