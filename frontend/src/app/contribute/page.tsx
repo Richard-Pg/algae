@@ -250,7 +250,7 @@ export default function ContributePage() {
 
           <details className="contribute-section" open>
             <summary className="contribute-label" style={{ cursor: "pointer" }}>
-              <span className="contribute-label-num">04</span>
+              <span className="contribute-label-num">03</span>
               Toxicity & Ecology Evidence
             </summary>
 
@@ -292,7 +292,7 @@ export default function ContributePage() {
 
           <details className="contribute-section" open>
             <summary className="contribute-label" style={{ cursor: "pointer" }}>
-              <span className="contribute-label-num">05</span>
+              <span className="contribute-label-num">04</span>
               Morphology, Taxonomy & References
             </summary>
 
@@ -325,7 +325,7 @@ export default function ContributePage() {
           {/* Context */}
           <details className="contribute-section">
             <summary className="contribute-label" style={{ cursor: "pointer" }}>
-              <span className="contribute-label-num">06</span>
+              <span className="contribute-label-num">05</span>
               Collection Context & Review Notes
             </summary>
             <div className="contribute-field" style={{ marginTop: "var(--space-md)" }}>
