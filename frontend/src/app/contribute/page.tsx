@@ -248,74 +248,13 @@ export default function ContributePage() {
             </div>
           </div>
 
-          {/* Context */}
-          <div className="contribute-section">
-            <label className="contribute-label">
-              <span className="contribute-label-num">03</span>
-              Context & Notes
-            </label>
-            <div className="contribute-fields-row">
-              <div className="contribute-field">
-                <label htmlFor="collection-date">Collection date (optional)</label>
-                <input id="collection-date" type="date" className="contribute-input"
-                  value={collectionDate} onChange={(e) => setCollectionDate(e.target.value)} />
-              </div>
-              <div className="contribute-field">
-                <label htmlFor="sample-type">Sample type (optional)</label>
-                <input id="sample-type" type="text" className="contribute-input" placeholder="e.g. freshwater bloom, lab culture, marine sample"
-                  value={sampleType} onChange={(e) => setSampleType(e.target.value)} />
-              </div>
-            </div>
-            <div className="contribute-field">
-              <label htmlFor="location">Where was this found?</label>
-              <input id="location" type="text" className="contribute-input" placeholder="e.g. Lake Tahoe, California, USA — freshwater bloom"
-                value={locationFound} onChange={(e) => setLocationFound(e.target.value)} />
-            </div>
-            <div className="contribute-fields-row" style={{ marginTop: "var(--space-md)" }}>
-              <div className="contribute-field">
-                <label htmlFor="microscopy-method">Microscopy method (optional)</label>
-                <input id="microscopy-method" type="text" className="contribute-input" placeholder="e.g. brightfield, 1000x, Lugol preserved"
-                  value={microscopyMethod} onChange={(e) => setMicroscopyMethod(e.target.value)} />
-              </div>
-              <div className="contribute-field">
-                <label htmlFor="contributor-confidence">Your confidence (optional)</label>
-                <input id="contributor-confidence" type="text" className="contribute-input" placeholder="e.g. high, moderate, uncertain"
-                  value={contributorConfidence} onChange={(e) => setContributorConfidence(e.target.value)} />
-              </div>
-            </div>
-            <div className="contribute-field" style={{ marginTop: "var(--space-md)" }}>
-              <label htmlFor="notes">Additional notes for our review team</label>
-              <textarea id="notes" className="contribute-input contribute-textarea"
-                placeholder="Why do you think this is this species? Any special features you noticed? Microscopy technique used?"
-                value={userNotes} onChange={(e) => setUserNotes(e.target.value)} rows={4} />
-            </div>
-          </div>
-
           <details className="contribute-section" open>
             <summary className="contribute-label" style={{ cursor: "pointer" }}>
               <span className="contribute-label-num">04</span>
-              Optional Scientific Evidence
+              Toxicity & Ecology Evidence
             </summary>
 
-            <div className="contribute-field" style={{ marginTop: "var(--space-md)" }}>
-              <label htmlFor="morphology">Morphology notes</label>
-              <textarea id="morphology" className="contribute-input contribute-textarea"
-                placeholder="Cell shape, size, colony structure, chloroplast position, valve/raphe/striae details..."
-                value={submittedMorphology} onChange={(e) => setSubmittedMorphology(e.target.value)} rows={3} />
-            </div>
-
-            <div className="admin-detail-label" style={{ marginTop: "var(--space-lg)" }}>Taxonomy</div>
-            <div className="contribute-fields-row">
-              {(["kingdom", "phylum", "class", "order", "family"] as const).map((key) => (
-                <div className="contribute-field" key={key}>
-                  <label htmlFor={`taxonomy-${key}`}>{key.charAt(0).toUpperCase() + key.slice(1)}</label>
-                  <input id={`taxonomy-${key}`} type="text" className="contribute-input"
-                    value={taxonomy[key]} onChange={(e) => setTaxonomy({ ...taxonomy, [key]: e.target.value })} />
-                </div>
-              ))}
-            </div>
-
-            <div className="admin-detail-label" style={{ marginTop: "var(--space-lg)" }}>Toxicity</div>
+            <div className="admin-detail-label" style={{ marginTop: "var(--space-md)" }}>Toxicity</div>
             <div className="contribute-fields-row">
               <div className="contribute-field">
                 <label htmlFor="produces-toxin">Produces toxin?</label>
@@ -349,12 +288,80 @@ export default function ContributePage() {
                 </div>
               ))}
             </div>
+          </details>
+
+          <details className="contribute-section" open>
+            <summary className="contribute-label" style={{ cursor: "pointer" }}>
+              <span className="contribute-label-num">05</span>
+              Morphology, Taxonomy & References
+            </summary>
+
+            <div className="contribute-field" style={{ marginTop: "var(--space-md)" }}>
+              <label htmlFor="morphology">Morphology notes</label>
+              <textarea id="morphology" className="contribute-input contribute-textarea"
+                placeholder="Cell shape, size, colony structure, chloroplast position, valve/raphe/striae details..."
+                value={submittedMorphology} onChange={(e) => setSubmittedMorphology(e.target.value)} rows={3} />
+            </div>
+
+            <div className="admin-detail-label" style={{ marginTop: "var(--space-lg)" }}>Taxonomy</div>
+            <div className="contribute-fields-row">
+              {(["kingdom", "phylum", "class", "order", "family"] as const).map((key) => (
+                <div className="contribute-field" key={key}>
+                  <label htmlFor={`taxonomy-${key}`}>{key.charAt(0).toUpperCase() + key.slice(1)}</label>
+                  <input id={`taxonomy-${key}`} type="text" className="contribute-input"
+                    value={taxonomy[key]} onChange={(e) => setTaxonomy({ ...taxonomy, [key]: e.target.value })} />
+                </div>
+              ))}
+            </div>
 
             <div className="contribute-field" style={{ marginTop: "var(--space-md)" }}>
               <label htmlFor="references">References / evidence links</label>
               <textarea id="references" className="contribute-input contribute-textarea"
                 placeholder="One DOI, paper, AlgaeBase, GBIF, WoRMS, NCBI, or other evidence link per line"
                 value={referencesText} onChange={(e) => setReferencesText(e.target.value)} rows={4} />
+            </div>
+          </details>
+
+          {/* Context */}
+          <details className="contribute-section">
+            <summary className="contribute-label" style={{ cursor: "pointer" }}>
+              <span className="contribute-label-num">06</span>
+              Collection Context & Review Notes
+            </summary>
+            <div className="contribute-field" style={{ marginTop: "var(--space-md)" }}>
+              <label htmlFor="notes">Additional notes for our review team</label>
+              <textarea id="notes" className="contribute-input contribute-textarea"
+                placeholder="Why do you think this is this species? Any special features you noticed? Microscopy technique used?"
+                value={userNotes} onChange={(e) => setUserNotes(e.target.value)} rows={4} />
+            </div>
+            <div className="contribute-fields-row" style={{ marginTop: "var(--space-md)" }}>
+              <div className="contribute-field">
+                <label htmlFor="microscopy-method">Microscopy method (optional)</label>
+                <input id="microscopy-method" type="text" className="contribute-input" placeholder="e.g. brightfield, 1000x, Lugol preserved"
+                  value={microscopyMethod} onChange={(e) => setMicroscopyMethod(e.target.value)} />
+              </div>
+              <div className="contribute-field">
+                <label htmlFor="contributor-confidence">Your confidence (optional)</label>
+                <input id="contributor-confidence" type="text" className="contribute-input" placeholder="e.g. high, moderate, uncertain"
+                  value={contributorConfidence} onChange={(e) => setContributorConfidence(e.target.value)} />
+              </div>
+            </div>
+            <div className="contribute-fields-row" style={{ marginTop: "var(--space-md)" }}>
+              <div className="contribute-field">
+                <label htmlFor="collection-date">Collection date (optional)</label>
+                <input id="collection-date" type="date" className="contribute-input"
+                  value={collectionDate} onChange={(e) => setCollectionDate(e.target.value)} />
+              </div>
+              <div className="contribute-field">
+                <label htmlFor="sample-type">Sample type (optional)</label>
+                <input id="sample-type" type="text" className="contribute-input" placeholder="e.g. freshwater bloom, lab culture, marine sample"
+                  value={sampleType} onChange={(e) => setSampleType(e.target.value)} />
+              </div>
+            </div>
+            <div className="contribute-field" style={{ marginTop: "var(--space-md)" }}>
+              <label htmlFor="location">Where was this found?</label>
+              <input id="location" type="text" className="contribute-input" placeholder="e.g. Lake Tahoe, California, USA — freshwater bloom"
+                value={locationFound} onChange={(e) => setLocationFound(e.target.value)} />
             </div>
           </details>
 
