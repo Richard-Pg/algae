@@ -291,7 +291,7 @@ export default function ContributePage() {
             </div>
           </div>
 
-          <details className="contribute-section">
+          <details className="contribute-section" open>
             <summary className="contribute-label" style={{ cursor: "pointer" }}>
               <span className="contribute-label-num">04</span>
               Optional Scientific Evidence
