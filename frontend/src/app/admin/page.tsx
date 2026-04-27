@@ -16,6 +16,15 @@ interface Submission {
   proposed_species: string;
   location_found: string;
   user_notes: string;
+  submitted_taxonomy: Record<string, string> | null;
+  submitted_toxin: Record<string, string> | null;
+  submitted_ecology: Record<string, string> | null;
+  submitted_references: Array<{ label?: string; url?: string; notes?: string }> | null;
+  submitted_morphology: string | null;
+  collection_date: string | null;
+  sample_type: string | null;
+  microscopy_method: string | null;
+  contributor_confidence: string | null;
   image_url: string | null;
   ai_analysis: Record<string, unknown> | null;
   status: string;
@@ -29,11 +38,75 @@ interface NotificationSettings {
   recipient: string;
 }
 
+interface SubmissionEditState {
+  proposed_genus: string;
+  proposed_species: string;
+  location_found: string;
+  user_notes: string;
+  submitted_morphology: string;
+  collection_date: string;
+  sample_type: string;
+  microscopy_method: string;
+  contributor_confidence: string;
+  submitted_taxonomy: Record<string, string>;
+  submitted_toxin: Record<string, string>;
+  submitted_ecology: Record<string, string>;
+  references_text: string;
+}
+
 const formatConfidence = (value: unknown) => {
   if (typeof value !== "number" || Number.isNaN(value)) return "—";
   const percent = value <= 1 ? value * 100 : value;
   return `${Math.round(percent)}%`;
 };
+
+const dictValue = (value: Record<string, string> | null | undefined, key: string) => value?.[key] || "";
+
+const submissionToEditState = (sub: Submission): SubmissionEditState => ({
+  proposed_genus: sub.proposed_genus || "",
+  proposed_species: sub.proposed_species || "",
+  location_found: sub.location_found || "",
+  user_notes: sub.user_notes || "",
+  submitted_morphology: sub.submitted_morphology || "",
+  collection_date: sub.collection_date || "",
+  sample_type: sub.sample_type || "",
+  microscopy_method: sub.microscopy_method || "",
+  contributor_confidence: sub.contributor_confidence || "",
+  submitted_taxonomy: {
+    kingdom: dictValue(sub.submitted_taxonomy, "kingdom"),
+    phylum: dictValue(sub.submitted_taxonomy, "phylum"),
+    class: dictValue(sub.submitted_taxonomy, "class"),
+    order: dictValue(sub.submitted_taxonomy, "order"),
+    family: dictValue(sub.submitted_taxonomy, "family"),
+  },
+  submitted_toxin: {
+    produces_toxin: dictValue(sub.submitted_toxin, "produces_toxin"),
+    toxin_type: dictValue(sub.submitted_toxin, "toxin_type"),
+    risk_level: dictValue(sub.submitted_toxin, "risk_level"),
+    health_effects: dictValue(sub.submitted_toxin, "health_effects"),
+  },
+  submitted_ecology: {
+    habitat: dictValue(sub.submitted_ecology, "habitat"),
+    water_type: dictValue(sub.submitted_ecology, "water_type"),
+    bloom_conditions: dictValue(sub.submitted_ecology, "bloom_conditions"),
+    temperature_range: dictValue(sub.submitted_ecology, "temperature_range"),
+    indicator_of: dictValue(sub.submitted_ecology, "indicator_of"),
+  },
+  references_text: (sub.submitted_references || [])
+    .map((ref) => [ref.label, ref.url, ref.notes].filter(Boolean).join(" | "))
+    .join("\n"),
+});
+
+const parseReferences = (value: string) => (
+  value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [label = "", url = "", notes = ""] = line.split("|").map((part) => part.trim());
+      return url ? { label, url, notes } : { label: "", url: label, notes: "" };
+    })
+);
 
 export default function AdminPage() {
   const { user, session, loading } = useAuth();
@@ -46,6 +119,8 @@ export default function AdminPage() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings | null>(null);
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [editForms, setEditForms] = useState<Record<string, SubmissionEditState>>({});
+  const [savingEdit, setSavingEdit] = useState<string | null>(null);
 
   const isAdmin = user?.email?.trim().toLowerCase() === ADMIN_EMAIL.trim().toLowerCase();
 
@@ -144,6 +219,54 @@ export default function AdminPage() {
     }
   };
 
+  const openSubmission = (sub: Submission) => {
+    setExpanded(expanded === sub.id ? null : sub.id);
+    setEditForms((prev) => prev[sub.id] ? prev : { ...prev, [sub.id]: submissionToEditState(sub) });
+  };
+
+  const updateEditForm = (id: string, patch: Partial<SubmissionEditState>) => {
+    setEditForms((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
+  };
+
+  const saveSubmissionEdit = async (id: string) => {
+    const form = editForms[id];
+    if (!session?.access_token || !form) return;
+    setSavingEdit(id);
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/submissions/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          proposed_genus: form.proposed_genus,
+          proposed_species: form.proposed_species,
+          location_found: form.location_found,
+          user_notes: form.user_notes,
+          submitted_morphology: form.submitted_morphology,
+          collection_date: form.collection_date,
+          sample_type: form.sample_type,
+          microscopy_method: form.microscopy_method,
+          contributor_confidence: form.contributor_confidence,
+          submitted_taxonomy: form.submitted_taxonomy,
+          submitted_toxin: form.submitted_toxin,
+          submitted_ecology: form.submitted_ecology,
+          submitted_references: parseReferences(form.references_text),
+        }),
+      });
+      if (!res.ok) throw new Error("Save failed");
+      const data = await res.json();
+      const updated = data.submission as Submission;
+      setSubmissions((items) => items.map((item) => item.id === id ? updated : item));
+      setEditForms((prev) => ({ ...prev, [id]: submissionToEditState(updated) }));
+    } catch {
+      alert("Failed to save edits. Please try again.");
+    } finally {
+      setSavingEdit(null);
+    }
+  };
+
   if (loading) return <><Header /><main className="main-content"><div className="text-center" style={{ padding: "4rem" }}>Loading...</div></main></>;
 
   if (!user || !isAdmin) {
@@ -221,7 +344,7 @@ export default function AdminPage() {
           {submissions.map((sub) => (
             <div key={sub.id} className="admin-submission-card glass-card">
               {/* Summary Row */}
-              <div className="admin-submission-summary" onClick={() => setExpanded(expanded === sub.id ? null : sub.id)}>
+              <div className="admin-submission-summary" onClick={() => openSubmission(sub)}>
                 {sub.image_url && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={sub.image_url} alt="Specimen" className="admin-submission-thumb" />
@@ -275,6 +398,104 @@ export default function AdminPage() {
 
                   {sub.status === "pending" && (
                     <div className="admin-action-row">
+                      {editForms[sub.id] && (
+                        <div className="admin-detail-section" style={{ marginBottom: "var(--space-lg)" }}>
+                          <div className="admin-detail-label">Edit Submission Before Review</div>
+                          <div className="contribute-fields-row">
+                            <div className="contribute-field">
+                              <label>Genus</label>
+                              <input className="contribute-input" value={editForms[sub.id].proposed_genus}
+                                onChange={(e) => updateEditForm(sub.id, { proposed_genus: e.target.value })} />
+                            </div>
+                            <div className="contribute-field">
+                              <label>Species</label>
+                              <input className="contribute-input" value={editForms[sub.id].proposed_species}
+                                onChange={(e) => updateEditForm(sub.id, { proposed_species: e.target.value })} />
+                            </div>
+                          </div>
+                          <div className="contribute-fields-row" style={{ marginTop: "var(--space-md)" }}>
+                            <div className="contribute-field">
+                              <label>Location</label>
+                              <input className="contribute-input" value={editForms[sub.id].location_found}
+                                onChange={(e) => updateEditForm(sub.id, { location_found: e.target.value })} />
+                            </div>
+                            <div className="contribute-field">
+                              <label>Sample type</label>
+                              <input className="contribute-input" value={editForms[sub.id].sample_type}
+                                onChange={(e) => updateEditForm(sub.id, { sample_type: e.target.value })} />
+                            </div>
+                          </div>
+                          <div className="contribute-fields-row" style={{ marginTop: "var(--space-md)" }}>
+                            <div className="contribute-field">
+                              <label>Collection date</label>
+                              <input type="date" className="contribute-input" value={editForms[sub.id].collection_date}
+                                onChange={(e) => updateEditForm(sub.id, { collection_date: e.target.value })} />
+                            </div>
+                            <div className="contribute-field">
+                              <label>Microscopy method</label>
+                              <input className="contribute-input" value={editForms[sub.id].microscopy_method}
+                                onChange={(e) => updateEditForm(sub.id, { microscopy_method: e.target.value })} />
+                            </div>
+                            <div className="contribute-field">
+                              <label>Contributor confidence</label>
+                              <input className="contribute-input" value={editForms[sub.id].contributor_confidence}
+                                onChange={(e) => updateEditForm(sub.id, { contributor_confidence: e.target.value })} />
+                            </div>
+                          </div>
+                          <div className="contribute-field" style={{ marginTop: "var(--space-md)" }}>
+                            <label>Contributor notes</label>
+                            <textarea className="contribute-input contribute-textarea" rows={3} value={editForms[sub.id].user_notes}
+                              onChange={(e) => updateEditForm(sub.id, { user_notes: e.target.value })} />
+                          </div>
+                          <div className="contribute-field" style={{ marginTop: "var(--space-md)" }}>
+                            <label>Morphology</label>
+                            <textarea className="contribute-input contribute-textarea" rows={3} value={editForms[sub.id].submitted_morphology}
+                              onChange={(e) => updateEditForm(sub.id, { submitted_morphology: e.target.value })} />
+                          </div>
+
+                          <details style={{ marginTop: "var(--space-md)" }}>
+                            <summary className="admin-detail-label" style={{ cursor: "pointer" }}>Taxonomy, toxicity, ecology, references</summary>
+                            <div className="contribute-fields-row" style={{ marginTop: "var(--space-md)" }}>
+                              {(["kingdom", "phylum", "class", "order", "family"] as const).map((key) => (
+                                <div className="contribute-field" key={key}>
+                                  <label>{key}</label>
+                                  <input className="contribute-input" value={editForms[sub.id].submitted_taxonomy[key] || ""}
+                                    onChange={(e) => updateEditForm(sub.id, { submitted_taxonomy: { ...editForms[sub.id].submitted_taxonomy, [key]: e.target.value } })} />
+                                </div>
+                              ))}
+                            </div>
+                            <div className="contribute-fields-row" style={{ marginTop: "var(--space-md)" }}>
+                              {(["produces_toxin", "toxin_type", "risk_level", "health_effects"] as const).map((key) => (
+                                <div className="contribute-field" key={key}>
+                                  <label>{key.replaceAll("_", " ")}</label>
+                                  <input className="contribute-input" value={editForms[sub.id].submitted_toxin[key] || ""}
+                                    onChange={(e) => updateEditForm(sub.id, { submitted_toxin: { ...editForms[sub.id].submitted_toxin, [key]: e.target.value } })} />
+                                </div>
+                              ))}
+                            </div>
+                            <div className="contribute-fields-row" style={{ marginTop: "var(--space-md)" }}>
+                              {(["habitat", "water_type", "bloom_conditions", "temperature_range", "indicator_of"] as const).map((key) => (
+                                <div className="contribute-field" key={key}>
+                                  <label>{key.replaceAll("_", " ")}</label>
+                                  <input className="contribute-input" value={editForms[sub.id].submitted_ecology[key] || ""}
+                                    onChange={(e) => updateEditForm(sub.id, { submitted_ecology: { ...editForms[sub.id].submitted_ecology, [key]: e.target.value } })} />
+                                </div>
+                              ))}
+                            </div>
+                            <div className="contribute-field" style={{ marginTop: "var(--space-md)" }}>
+                              <label>References, one per line. Use label | url | notes if useful.</label>
+                              <textarea className="contribute-input contribute-textarea" rows={4} value={editForms[sub.id].references_text}
+                                onChange={(e) => updateEditForm(sub.id, { references_text: e.target.value })} />
+                            </div>
+                          </details>
+                          <button type="button" className="btn-secondary" style={{ marginTop: "var(--space-md)" }}
+                            disabled={savingEdit === sub.id}
+                            onClick={() => saveSubmissionEdit(sub.id)}>
+                            {savingEdit === sub.id ? "Saving..." : "Save Edits"}
+                          </button>
+                        </div>
+                      )}
+
                       <textarea
                         placeholder="Optional notes to the contributor..."
                         className="contribute-input contribute-textarea"

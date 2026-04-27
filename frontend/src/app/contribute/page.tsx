@@ -44,6 +44,32 @@ export default function ContributePage() {
   const [proposedSpecies, setProposedSpecies] = useState("");
   const [locationFound, setLocationFound] = useState("");
   const [userNotes, setUserNotes] = useState("");
+  const [submittedMorphology, setSubmittedMorphology] = useState("");
+  const [collectionDate, setCollectionDate] = useState("");
+  const [sampleType, setSampleType] = useState("");
+  const [microscopyMethod, setMicroscopyMethod] = useState("");
+  const [contributorConfidence, setContributorConfidence] = useState("");
+  const [taxonomy, setTaxonomy] = useState({
+    kingdom: "",
+    phylum: "",
+    class: "",
+    order: "",
+    family: "",
+  });
+  const [toxin, setToxin] = useState({
+    produces_toxin: "",
+    toxin_type: "",
+    risk_level: "",
+    health_effects: "",
+  });
+  const [ecology, setEcology] = useState({
+    habitat: "",
+    water_type: "",
+    bloom_conditions: "",
+    temperature_range: "",
+    indicator_of: "",
+  });
+  const [referencesText, setReferencesText] = useState("");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -80,6 +106,21 @@ export default function ContributePage() {
       formData.append("proposed_species", proposedSpecies.trim());
       formData.append("location_found", locationFound.trim());
       formData.append("user_notes", userNotes.trim());
+      formData.append("submitted_morphology", submittedMorphology.trim());
+      formData.append("collection_date", collectionDate.trim());
+      formData.append("sample_type", sampleType.trim());
+      formData.append("microscopy_method", microscopyMethod.trim());
+      formData.append("contributor_confidence", contributorConfidence.trim());
+      formData.append("submitted_taxonomy", JSON.stringify(taxonomy));
+      formData.append("submitted_toxin", JSON.stringify(toxin));
+      formData.append("submitted_ecology", JSON.stringify(ecology));
+      formData.append("submitted_references", JSON.stringify(
+        referencesText
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .map((line) => ({ label: "", url: line, notes: "" }))
+      ));
 
       const res = await fetch(`${API_BASE}/api/submit-species`, {
         method: "POST",
@@ -127,7 +168,13 @@ export default function ContributePage() {
             <p>Thank you for contributing to the AlgaeAI community database. Your submission is now under review and will be evaluated by our team. This usually takes 1-3 days.</p>
             <div style={{ display: "flex", gap: "1rem", justifyContent: "center", flexWrap: "wrap", marginTop: "1.5rem" }}>
               <button className="btn-primary" onClick={() => router.push("/")}>Back to Identify</button>
-              <button className="btn-secondary" onClick={() => { setSuccess(false); setSelectedImage(null); setSelectedFile(null); setProposedGenus(""); setProposedSpecies(""); setLocationFound(""); setUserNotes(""); }}>
+              <button className="btn-secondary" onClick={() => {
+                setSuccess(false); setSelectedImage(null); setSelectedFile(null); setProposedGenus(""); setProposedSpecies(""); setLocationFound(""); setUserNotes("");
+                setSubmittedMorphology(""); setCollectionDate(""); setSampleType(""); setMicroscopyMethod(""); setContributorConfidence(""); setReferencesText("");
+                setTaxonomy({ kingdom: "", phylum: "", class: "", order: "", family: "" });
+                setToxin({ produces_toxin: "", toxin_type: "", risk_level: "", health_effects: "" });
+                setEcology({ habitat: "", water_type: "", bloom_conditions: "", temperature_range: "", indicator_of: "" });
+              }}>
                 Submit Another
               </button>
             </div>
@@ -207,10 +254,34 @@ export default function ContributePage() {
               <span className="contribute-label-num">03</span>
               Context & Notes
             </label>
+            <div className="contribute-fields-row">
+              <div className="contribute-field">
+                <label htmlFor="collection-date">Collection date (optional)</label>
+                <input id="collection-date" type="date" className="contribute-input"
+                  value={collectionDate} onChange={(e) => setCollectionDate(e.target.value)} />
+              </div>
+              <div className="contribute-field">
+                <label htmlFor="sample-type">Sample type (optional)</label>
+                <input id="sample-type" type="text" className="contribute-input" placeholder="e.g. freshwater bloom, lab culture, marine sample"
+                  value={sampleType} onChange={(e) => setSampleType(e.target.value)} />
+              </div>
+            </div>
             <div className="contribute-field">
               <label htmlFor="location">Where was this found?</label>
               <input id="location" type="text" className="contribute-input" placeholder="e.g. Lake Tahoe, California, USA — freshwater bloom"
                 value={locationFound} onChange={(e) => setLocationFound(e.target.value)} />
+            </div>
+            <div className="contribute-fields-row" style={{ marginTop: "var(--space-md)" }}>
+              <div className="contribute-field">
+                <label htmlFor="microscopy-method">Microscopy method (optional)</label>
+                <input id="microscopy-method" type="text" className="contribute-input" placeholder="e.g. brightfield, 1000x, Lugol preserved"
+                  value={microscopyMethod} onChange={(e) => setMicroscopyMethod(e.target.value)} />
+              </div>
+              <div className="contribute-field">
+                <label htmlFor="contributor-confidence">Your confidence (optional)</label>
+                <input id="contributor-confidence" type="text" className="contribute-input" placeholder="e.g. high, moderate, uncertain"
+                  value={contributorConfidence} onChange={(e) => setContributorConfidence(e.target.value)} />
+              </div>
             </div>
             <div className="contribute-field" style={{ marginTop: "var(--space-md)" }}>
               <label htmlFor="notes">Additional notes for our review team</label>
@@ -219,6 +290,73 @@ export default function ContributePage() {
                 value={userNotes} onChange={(e) => setUserNotes(e.target.value)} rows={4} />
             </div>
           </div>
+
+          <details className="contribute-section">
+            <summary className="contribute-label" style={{ cursor: "pointer" }}>
+              <span className="contribute-label-num">04</span>
+              Optional Scientific Evidence
+            </summary>
+
+            <div className="contribute-field" style={{ marginTop: "var(--space-md)" }}>
+              <label htmlFor="morphology">Morphology notes</label>
+              <textarea id="morphology" className="contribute-input contribute-textarea"
+                placeholder="Cell shape, size, colony structure, chloroplast position, valve/raphe/striae details..."
+                value={submittedMorphology} onChange={(e) => setSubmittedMorphology(e.target.value)} rows={3} />
+            </div>
+
+            <div className="admin-detail-label" style={{ marginTop: "var(--space-lg)" }}>Taxonomy</div>
+            <div className="contribute-fields-row">
+              {(["kingdom", "phylum", "class", "order", "family"] as const).map((key) => (
+                <div className="contribute-field" key={key}>
+                  <label htmlFor={`taxonomy-${key}`}>{key.charAt(0).toUpperCase() + key.slice(1)}</label>
+                  <input id={`taxonomy-${key}`} type="text" className="contribute-input"
+                    value={taxonomy[key]} onChange={(e) => setTaxonomy({ ...taxonomy, [key]: e.target.value })} />
+                </div>
+              ))}
+            </div>
+
+            <div className="admin-detail-label" style={{ marginTop: "var(--space-lg)" }}>Toxicity</div>
+            <div className="contribute-fields-row">
+              <div className="contribute-field">
+                <label htmlFor="produces-toxin">Produces toxin?</label>
+                <input id="produces-toxin" type="text" className="contribute-input" placeholder="yes/no/unknown"
+                  value={toxin.produces_toxin} onChange={(e) => setToxin({ ...toxin, produces_toxin: e.target.value })} />
+              </div>
+              <div className="contribute-field">
+                <label htmlFor="toxin-type">Toxin type</label>
+                <input id="toxin-type" type="text" className="contribute-input" placeholder="e.g. microcystin, anatoxin-a"
+                  value={toxin.toxin_type} onChange={(e) => setToxin({ ...toxin, toxin_type: e.target.value })} />
+              </div>
+              <div className="contribute-field">
+                <label htmlFor="risk-level">Risk level</label>
+                <input id="risk-level" type="text" className="contribute-input" placeholder="None/Low/Medium/High"
+                  value={toxin.risk_level} onChange={(e) => setToxin({ ...toxin, risk_level: e.target.value })} />
+              </div>
+              <div className="contribute-field">
+                <label htmlFor="health-effects">Health effects</label>
+                <input id="health-effects" type="text" className="contribute-input"
+                  value={toxin.health_effects} onChange={(e) => setToxin({ ...toxin, health_effects: e.target.value })} />
+              </div>
+            </div>
+
+            <div className="admin-detail-label" style={{ marginTop: "var(--space-lg)" }}>Ecology</div>
+            <div className="contribute-fields-row">
+              {(["habitat", "water_type", "bloom_conditions", "temperature_range", "indicator_of"] as const).map((key) => (
+                <div className="contribute-field" key={key}>
+                  <label htmlFor={`ecology-${key}`}>{key.replaceAll("_", " ")}</label>
+                  <input id={`ecology-${key}`} type="text" className="contribute-input"
+                    value={ecology[key]} onChange={(e) => setEcology({ ...ecology, [key]: e.target.value })} />
+                </div>
+              ))}
+            </div>
+
+            <div className="contribute-field" style={{ marginTop: "var(--space-md)" }}>
+              <label htmlFor="references">References / evidence links</label>
+              <textarea id="references" className="contribute-input contribute-textarea"
+                placeholder="One DOI, paper, AlgaeBase, GBIF, WoRMS, NCBI, or other evidence link per line"
+                value={referencesText} onChange={(e) => setReferencesText(e.target.value)} rows={4} />
+            </div>
+          </details>
 
           {error && (
             <div className="glass-card error-card">

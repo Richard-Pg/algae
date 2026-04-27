@@ -5,10 +5,11 @@ Provides endpoints for image upload/identification, species lookup, and history.
 
 import os
 import smtplib
+import json
 import uuid
 from datetime import datetime
 from email.message import EmailMessage
-from typing import Optional, List
+from typing import Optional, List, Any
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, Header, UploadFile, HTTPException
@@ -196,6 +197,22 @@ class NotificationSettingsRequest(BaseModel):
     enabled: bool
 
 
+class AdminSubmissionEditRequest(BaseModel):
+    proposed_genus: Optional[str] = None
+    proposed_species: Optional[str] = None
+    location_found: Optional[str] = None
+    user_notes: Optional[str] = None
+    submitted_morphology: Optional[str] = None
+    collection_date: Optional[str] = None
+    sample_type: Optional[str] = None
+    microscopy_method: Optional[str] = None
+    contributor_confidence: Optional[str] = None
+    submitted_taxonomy: Optional[dict[str, Any]] = None
+    submitted_toxin: Optional[dict[str, Any]] = None
+    submitted_ecology: Optional[dict[str, Any]] = None
+    submitted_references: Optional[list[Any]] = None
+
+
 def _extract_bearer_token(authorization: Optional[str]) -> str:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing authentication token")
@@ -283,25 +300,63 @@ def _validate_uploaded_image(file: UploadFile, image_bytes: bytes):
         raise HTTPException(status_code=400, detail="Empty file uploaded")
 
 
+def _parse_json_form_field(value: str, fallback):
+    if not value:
+        return fallback
+    try:
+        parsed = json.loads(value)
+        return parsed if parsed is not None else fallback
+    except json.JSONDecodeError:
+        return fallback
+
+
+def _clean_dict(value: Optional[dict]) -> dict:
+    if not isinstance(value, dict):
+        return {}
+    return {key: val for key, val in value.items() if val not in (None, "", [])}
+
+
+def _clean_references(value: Optional[list]) -> list:
+    if not isinstance(value, list):
+        return []
+    cleaned = []
+    for item in value:
+        if isinstance(item, str) and item.strip():
+            cleaned.append({"label": "", "url": item.strip(), "notes": ""})
+        elif isinstance(item, dict) and any(str(item.get(key, "")).strip() for key in ("label", "url", "notes")):
+            cleaned.append({
+                "label": str(item.get("label", "")).strip(),
+                "url": str(item.get("url", "")).strip(),
+                "notes": str(item.get("notes", "")).strip(),
+            })
+    return cleaned
+
+
 def _submission_species_entry(data: dict) -> dict:
     ai = data.get("ai_analysis") or {}
     database_info = ai.get("database_info") or {}
     generated_details = ai.get("generated_details") or {}
+    submitted_taxonomy = _clean_dict(data.get("submitted_taxonomy"))
+    submitted_toxin = _clean_dict(data.get("submitted_toxin"))
+    submitted_ecology = _clean_dict(data.get("submitted_ecology"))
+    submitted_references = _clean_references(data.get("submitted_references"))
+    submitted_morphology = (data.get("submitted_morphology") or "").strip()
 
     return {
         "genus": data["proposed_genus"],
         "common_species": [data["proposed_species"]] if data.get("proposed_species") else [],
-        "taxonomy": database_info.get("taxonomy") or ai.get("taxonomy") or {},
-        "toxin": database_info.get("toxin") or generated_details.get("toxin") or ai.get("toxin") or ai.get("toxin_risk") or {},
-        "ecology": database_info.get("ecology") or generated_details.get("ecology") or ai.get("ecology") or {},
+        "taxonomy": submitted_taxonomy or database_info.get("taxonomy") or ai.get("taxonomy") or {},
+        "toxin": submitted_toxin or database_info.get("toxin") or generated_details.get("toxin") or ai.get("toxin") or ai.get("toxin_risk") or {},
+        "ecology": submitted_ecology or database_info.get("ecology") or generated_details.get("ecology") or ai.get("ecology") or {},
         "description": (
             database_info.get("description")
             or generated_details.get("description")
             or ai.get("description")
             or f"Community-contributed species. Submitted by {data.get('user_name', 'a community member')}."
         ),
-        "morphology": database_info.get("morphology") or generated_details.get("morphology") or ai.get("morphology") or "",
+        "morphology": submitted_morphology or database_info.get("morphology") or generated_details.get("morphology") or ai.get("morphology") or "",
         "reference_images": [data["image_url"]] if data.get("image_url") else [],
+        "references": submitted_references,
     }
 
 
@@ -460,6 +515,15 @@ async def submit_species(
     proposed_species: str = Form(""),
     location_found: str = Form(""),
     user_notes: str = Form(""),
+    submitted_taxonomy: str = Form("{}"),
+    submitted_toxin: str = Form("{}"),
+    submitted_ecology: str = Form("{}"),
+    submitted_references: str = Form("[]"),
+    submitted_morphology: str = Form(""),
+    collection_date: str = Form(""),
+    sample_type: str = Form(""),
+    microscopy_method: str = Form(""),
+    contributor_confidence: str = Form(""),
     current_user=Depends(get_current_user),
 ):
     """
@@ -514,6 +578,15 @@ async def submit_species(
             "proposed_species": proposed_species or (ai_result.get("primary_identification", {}).get("species", "") if ai_result else ""),
             "location_found": location_found,
             "user_notes": user_notes,
+            "submitted_taxonomy": _clean_dict(_parse_json_form_field(submitted_taxonomy, {})),
+            "submitted_toxin": _clean_dict(_parse_json_form_field(submitted_toxin, {})),
+            "submitted_ecology": _clean_dict(_parse_json_form_field(submitted_ecology, {})),
+            "submitted_references": _clean_references(_parse_json_form_field(submitted_references, [])),
+            "submitted_morphology": submitted_morphology.strip(),
+            "collection_date": collection_date.strip(),
+            "sample_type": sample_type.strip(),
+            "microscopy_method": microscopy_method.strip(),
+            "contributor_confidence": contributor_confidence.strip(),
             "image_url": image_url,
             "ai_analysis": ai_result,
             "status": "pending",
@@ -562,6 +635,54 @@ async def get_submissions(status: str = "pending", admin_user=Depends(require_ad
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.put("/api/admin/submissions/{submission_id}")
+async def edit_submission(
+    submission_id: str,
+    request: AdminSubmissionEditRequest,
+    admin_user=Depends(require_admin),
+):
+    """Edit user-submitted scientific fields before approving or rejecting."""
+    from algae_database import get_supabase
+
+    payload = request.dict(exclude_unset=True)
+    if "proposed_genus" in payload:
+        payload["proposed_genus"] = (payload["proposed_genus"] or "").strip()
+        if not payload["proposed_genus"]:
+            raise HTTPException(status_code=400, detail="Genus is required")
+
+    for key in [
+        "proposed_species",
+        "location_found",
+        "user_notes",
+        "submitted_morphology",
+        "collection_date",
+        "sample_type",
+        "microscopy_method",
+        "contributor_confidence",
+    ]:
+        if key in payload and payload[key] is not None:
+            payload[key] = str(payload[key]).strip()
+
+    for key in ["submitted_taxonomy", "submitted_toxin", "submitted_ecology"]:
+        if key in payload:
+            payload[key] = _clean_dict(payload[key])
+
+    if "submitted_references" in payload:
+        payload["submitted_references"] = _clean_references(payload["submitted_references"])
+
+    payload["updated_at"] = datetime.now().isoformat()
+    try:
+        supabase = get_supabase()
+        result = supabase.table("species_submissions").update(payload).eq("id", submission_id).execute()
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Submission not found")
+        return {"success": True, "submission": result.data[0]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/admin/submissions/{submission_id}/approve")
 async def approve_submission(
     submission_id: str,
@@ -586,6 +707,7 @@ async def approve_submission(
             update_payload = {
                 "common_species": _merge_unique(existing_row.get("common_species") or [], species_entry["common_species"]),
                 "reference_images": _merge_unique(existing_row.get("reference_images") or [], species_entry["reference_images"]),
+                "references": _merge_unique(existing_row.get("references") or [], species_entry.get("references") or []),
                 "updated_at": datetime.now().isoformat(),
             }
             supabase.table("algae_species").update(update_payload).eq("id", existing_row["id"]).execute()
