@@ -7,6 +7,12 @@ import { useAuth } from "@/contexts/AuthContext";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL || "haiming.peng@outlook.com";
+const toxinPresenceOptions = ["Yes", "No", "Unknown"];
+const riskLevelOptions = ["None", "Low", "Medium", "High", "Unknown"];
+const waterTypeOptions = ["Freshwater", "Marine", "Brackish", "Terrestrial", "Mixed/Variable", "Unknown"];
+const confidenceOptions = ["High", "Moderate", "Low", "Uncertain"];
+const sampleTypeOptions = ["Freshwater bloom", "Marine sample", "Brackish sample", "Lab culture", "Surface water", "Field sample", "Other"];
+const microscopyOptions = ["Brightfield", "Phase contrast", "DIC", "Fluorescence", "SEM", "Light microscopy", "Unknown"];
 
 interface Submission {
   id: string;
@@ -421,8 +427,11 @@ export default function AdminPage() {
                             </div>
                             <div className="contribute-field">
                               <label>Sample type</label>
-                              <input className="contribute-input" value={editForms[sub.id].sample_type}
-                                onChange={(e) => updateEditForm(sub.id, { sample_type: e.target.value })} />
+                              <select className="contribute-input" value={editForms[sub.id].sample_type}
+                                onChange={(e) => updateEditForm(sub.id, { sample_type: e.target.value })}>
+                                <option value="">Select...</option>
+                                {sampleTypeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                              </select>
                             </div>
                           </div>
                           <div className="contribute-fields-row" style={{ marginTop: "var(--space-md)" }}>
@@ -433,13 +442,19 @@ export default function AdminPage() {
                             </div>
                             <div className="contribute-field">
                               <label>Microscopy method</label>
-                              <input className="contribute-input" value={editForms[sub.id].microscopy_method}
-                                onChange={(e) => updateEditForm(sub.id, { microscopy_method: e.target.value })} />
+                              <select className="contribute-input" value={editForms[sub.id].microscopy_method}
+                                onChange={(e) => updateEditForm(sub.id, { microscopy_method: e.target.value })}>
+                                <option value="">Select...</option>
+                                {microscopyOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                              </select>
                             </div>
                             <div className="contribute-field">
                               <label>Contributor confidence</label>
-                              <input className="contribute-input" value={editForms[sub.id].contributor_confidence}
-                                onChange={(e) => updateEditForm(sub.id, { contributor_confidence: e.target.value })} />
+                              <select className="contribute-input" value={editForms[sub.id].contributor_confidence}
+                                onChange={(e) => updateEditForm(sub.id, { contributor_confidence: e.target.value })}>
+                                <option value="">Select...</option>
+                                {confidenceOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                              </select>
                             </div>
                           </div>
                           <div className="contribute-field" style={{ marginTop: "var(--space-md)" }}>
@@ -465,16 +480,48 @@ export default function AdminPage() {
                               ))}
                             </div>
                             <div className="contribute-fields-row" style={{ marginTop: "var(--space-md)" }}>
-                              {(["produces_toxin", "toxin_type", "risk_level", "health_effects"] as const).map((key) => (
-                                <div className="contribute-field" key={key}>
-                                  <label>{key.replaceAll("_", " ")}</label>
-                                  <input className="contribute-input" value={editForms[sub.id].submitted_toxin[key] || ""}
-                                    onChange={(e) => updateEditForm(sub.id, { submitted_toxin: { ...editForms[sub.id].submitted_toxin, [key]: e.target.value } })} />
-                                </div>
-                              ))}
+                              <div className="contribute-field">
+                                <label>produces toxin</label>
+                                <select className="contribute-input" value={editForms[sub.id].submitted_toxin.produces_toxin || ""}
+                                  onChange={(e) => updateEditForm(sub.id, { submitted_toxin: { ...editForms[sub.id].submitted_toxin, produces_toxin: e.target.value } })}>
+                                  <option value="">Select...</option>
+                                  {toxinPresenceOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                                </select>
+                              </div>
+                              <div className="contribute-field">
+                                <label>toxin type</label>
+                                <input className="contribute-input" value={editForms[sub.id].submitted_toxin.toxin_type || ""}
+                                  onChange={(e) => updateEditForm(sub.id, { submitted_toxin: { ...editForms[sub.id].submitted_toxin, toxin_type: e.target.value } })} />
+                              </div>
+                              <div className="contribute-field">
+                                <label>risk level</label>
+                                <select className="contribute-input" value={editForms[sub.id].submitted_toxin.risk_level || ""}
+                                  onChange={(e) => updateEditForm(sub.id, { submitted_toxin: { ...editForms[sub.id].submitted_toxin, risk_level: e.target.value } })}>
+                                  <option value="">Select...</option>
+                                  {riskLevelOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                                </select>
+                              </div>
+                              <div className="contribute-field">
+                                <label>health effects</label>
+                                <input className="contribute-input" value={editForms[sub.id].submitted_toxin.health_effects || ""}
+                                  onChange={(e) => updateEditForm(sub.id, { submitted_toxin: { ...editForms[sub.id].submitted_toxin, health_effects: e.target.value } })} />
+                              </div>
                             </div>
                             <div className="contribute-fields-row" style={{ marginTop: "var(--space-md)" }}>
-                              {(["habitat", "water_type", "bloom_conditions", "temperature_range", "indicator_of"] as const).map((key) => (
+                              <div className="contribute-field">
+                                <label>habitat</label>
+                                <input className="contribute-input" value={editForms[sub.id].submitted_ecology.habitat || ""}
+                                  onChange={(e) => updateEditForm(sub.id, { submitted_ecology: { ...editForms[sub.id].submitted_ecology, habitat: e.target.value } })} />
+                              </div>
+                              <div className="contribute-field">
+                                <label>water type</label>
+                                <select className="contribute-input" value={editForms[sub.id].submitted_ecology.water_type || ""}
+                                  onChange={(e) => updateEditForm(sub.id, { submitted_ecology: { ...editForms[sub.id].submitted_ecology, water_type: e.target.value } })}>
+                                  <option value="">Select...</option>
+                                  {waterTypeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                                </select>
+                              </div>
+                              {(["bloom_conditions", "temperature_range", "indicator_of"] as const).map((key) => (
                                 <div className="contribute-field" key={key}>
                                   <label>{key.replaceAll("_", " ")}</label>
                                   <input className="contribute-input" value={editForms[sub.id].submitted_ecology[key] || ""}
