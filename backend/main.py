@@ -24,6 +24,13 @@ from algae_database import get_species_info, get_all_genera
 load_dotenv()
 load_dotenv("../frontend/.env.local")
 
+
+def clean_env(name: str, default: str = "") -> str:
+    value = os.environ.get(name, default).strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1].strip()
+    return value
+
 app = FastAPI(
     title="AI Algae Identification System",
     description="Identify harmful algae and diatoms from uploaded images",
@@ -185,7 +192,7 @@ async def clear_history():
 # Community Contribution Endpoints
 # ============================================================
 
-ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "haiming.peng@outlook.com")
+ADMIN_EMAIL = clean_env("ADMIN_EMAIL", "haiming.peng@outlook.com")
 _auth_supabase = None
 
 
@@ -239,8 +246,8 @@ def get_auth_supabase():
     """Use an anon-key client for end-user JWT verification."""
     global _auth_supabase
     if not _auth_supabase:
-        supabase_url = os.environ.get("SUPABASE_URL", "")
-        anon_key = os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY", "")
+        supabase_url = clean_env("SUPABASE_URL")
+        anon_key = clean_env("SUPABASE_ANON_KEY") or clean_env("NEXT_PUBLIC_SUPABASE_ANON_KEY")
         if not supabase_url or not anon_key:
             raise HTTPException(status_code=500, detail="Missing Supabase auth configuration")
         _auth_supabase = create_client(supabase_url, anon_key)
