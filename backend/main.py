@@ -230,7 +230,7 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
     """Verify the Supabase access token and return the authenticated user."""
     token = _extract_bearer_token(authorization)
     try:
-        response = get_auth_supabase().auth.get_user(token)
+        response = get_user_from_supabase_token(token)
         user = getattr(response, "user", None)
         if not user:
             raise HTTPException(status_code=401, detail="Invalid authentication token")
@@ -252,6 +252,33 @@ def get_auth_supabase():
             raise HTTPException(status_code=500, detail="Missing Supabase auth configuration")
         _auth_supabase = create_client(supabase_url, anon_key)
     return _auth_supabase
+
+
+def get_user_from_supabase_token(token: str):
+    """Verify a user JWT, tolerating cloud env mistakes around anon keys.
+
+    Cloud providers make it easy to paste a malformed anon key. The service role
+    key is still server-only here, so it is safe as a backend fallback for the
+    Supabase Auth /user check.
+    """
+    supabase_url = clean_env("SUPABASE_URL")
+    candidate_keys = [
+        ("SUPABASE_ANON_KEY", clean_env("SUPABASE_ANON_KEY")),
+        ("NEXT_PUBLIC_SUPABASE_ANON_KEY", clean_env("NEXT_PUBLIC_SUPABASE_ANON_KEY")),
+        ("SUPABASE_SERVICE_ROLE_KEY", clean_env("SUPABASE_SERVICE_ROLE_KEY")),
+    ]
+    last_error = None
+    for key_name, key in candidate_keys:
+        if not supabase_url or not key:
+            continue
+        try:
+            return create_client(supabase_url, key).auth.get_user(token)
+        except Exception as e:
+            last_error = e
+            print(f"Supabase auth verification failed with {key_name}: {e}")
+    if last_error:
+        raise last_error
+    raise RuntimeError("Missing Supabase auth configuration")
 
 
 async def require_admin(current_user=Depends(get_current_user)):
