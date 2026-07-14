@@ -114,8 +114,8 @@ async def identify_algae(image_bytes: bytes, filename: str = "image.jpg") -> dic
     if image.mode not in ("RGB", "L"):
         image = image.convert("RGB")
 
-    # Use Gemini 3.1 Flash-Lite for fast, cost-effective testing
-    model = genai.GenerativeModel("gemini-3.1-flash-lite-preview")
+    # Use Gemini 3.5 Flash for stronger multimodal identification quality.
+    model = genai.GenerativeModel("gemini-3.5-flash")
 
     response = model.generate_content(
         [IDENTIFICATION_PROMPT, image],
