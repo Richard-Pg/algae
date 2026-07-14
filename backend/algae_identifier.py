@@ -11,6 +11,13 @@ import io
 from algae_database import get_species_info
 
 
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash"
+
+
+def get_gemini_model_name() -> str:
+    return os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
+
+
 def configure_gemini():
     """Configure the Gemini API with the API key."""
     api_key = os.getenv("GEMINI_API_KEY")
@@ -114,8 +121,9 @@ async def identify_algae(image_bytes: bytes, filename: str = "image.jpg") -> dic
     if image.mode not in ("RGB", "L"):
         image = image.convert("RGB")
 
-    # Use Gemini 3.5 Flash for stronger multimodal identification quality.
-    model = genai.GenerativeModel("gemini-3.5-flash")
+    # Use Gemini 3.5 Flash by default for stronger multimodal identification quality.
+    model_name = get_gemini_model_name()
+    model = genai.GenerativeModel(model_name)
 
     response = model.generate_content(
         [IDENTIFICATION_PROMPT, image],
@@ -166,5 +174,8 @@ async def identify_algae(image_bytes: bytes, filename: str = "image.jpg") -> dic
             }
         else:
             result["database_info"] = None
+
+    result["ai_model"] = model_name
+    result["ai_provider"] = "google_gemini"
 
     return result
