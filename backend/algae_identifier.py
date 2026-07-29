@@ -3,29 +3,32 @@ Algae Identifier using Google Gemini Vision API
 Sends images to Gemini for analysis and returns structured algae identification results.
 """
 
+import io
 import json
 import os
-import google.generativeai as genai
+
+from google import genai
+from google.genai import types
 from PIL import Image
-import io
+
 from algae_database import get_species_info
 
 
-DEFAULT_GEMINI_MODEL = "gemini-3.5-flash"
+DEFAULT_GEMINI_MODEL = "gemini-3.6-flash"
 
 
 def get_gemini_model_name() -> str:
     return os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
 
 
-def configure_gemini():
-    """Configure the Gemini API with the API key."""
+def create_gemini_client() -> genai.Client:
+    """Create a Gemini client from the configured API key."""
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key or api_key == "your_gemini_api_key_here":
         raise ValueError(
             "GEMINI_API_KEY not set. Get a free key at https://aistudio.google.com/app/apikey"
         )
-    genai.configure(api_key=api_key)
+    return genai.Client(api_key=api_key)
 
 
 IDENTIFICATION_PROMPT = """You are a highly distinguished phycologist and taxonomist with decades of experience in microscopic algae and diatom identification. 
@@ -112,27 +115,29 @@ async def identify_algae(image_bytes: bytes, filename: str = "image.jpg") -> dic
     Identify algae from image bytes using Gemini Vision API.
     Returns structured identification results enriched with database info.
     """
-    configure_gemini()
+    # Normalize any Pillow-supported input to lossless PNG for a consistent API payload.
+    with Image.open(io.BytesIO(image_bytes)) as source_image:
+        if source_image.mode not in ("RGB", "L"):
+            source_image = source_image.convert("RGB")
+        normalized_image = io.BytesIO()
+        source_image.save(normalized_image, format="PNG")
 
-    # Prepare image for Gemini
-    image = Image.open(io.BytesIO(image_bytes))
-
-    # Convert to RGB if needed (handles RGBA, etc.)
-    if image.mode not in ("RGB", "L"):
-        image = image.convert("RGB")
-
-    # Use Gemini 3.5 Flash by default for stronger multimodal identification quality.
-    model_name = get_gemini_model_name()
-    model = genai.GenerativeModel(model_name)
-
-    response = model.generate_content(
-        [IDENTIFICATION_PROMPT, image],
-        generation_config=genai.types.GenerationConfig(
-            temperature=0.1,
-            max_output_tokens=4096,
-            response_mime_type="application/json",
-        ),
+    image_part = types.Part.from_bytes(
+        data=normalized_image.getvalue(),
+        mime_type="image/png",
     )
+
+    # Gemini 3.6 ignores deprecated sampling controls, so only supported options are set.
+    model_name = get_gemini_model_name()
+    async with create_gemini_client().aio as client:
+        response = await client.models.generate_content(
+            model=model_name,
+            contents=[IDENTIFICATION_PROMPT, image_part],
+            config=types.GenerateContentConfig(
+                max_output_tokens=4096,
+                response_mime_type="application/json",
+            ),
+        )
 
     # Parse response
     try:
