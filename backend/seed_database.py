@@ -312,6 +312,36 @@ ALGAE_DATABASE = {
         "description": "Thalassiosira is a major marine centric diatom genus and one of the most important primary producers in the ocean. T. pseudonana was the first diatom to have its genome sequenced. These diatoms play a crucial role in the marine carbon cycle and silica cycling.",
         "morphology": "Disc-shaped (centric) frustule with strutted processes (fultoportulae) at the margin. Diameter 5–50+ μm. Cells often connected in chains by threads of chitin.",
         "reference_images": []
+    },
+    "Pandorina": {
+        "genus": "Pandorina",
+        "common_species": ["Pandorina morum"],
+        "taxonomy": {
+            "kingdom": "Plantae",
+            "phylum": "Chlorophyta",
+            "class": "Chlorophyceae",
+            "order": "Volvocales",
+            "family": "Volvocaceae",
+            "genus": "Pandorina"
+        },
+        "toxin": {
+            "produces_toxin": False,
+            "toxin_type": "None",
+            "risk_level": "None",
+            "health_effects": "Non-toxic green alga."
+        },
+        "ecology": {
+            "habitat": "Freshwater ponds, lakes, puddles, and soil",
+            "water_type": "Freshwater",
+            "bloom_conditions": "Warm, nutrient-rich freshwater bodies in spring and summer",
+            "temperature_range": "15-25°C",
+            "indicator_of": "Eutrophic to mesotrophic waters"
+        },
+        "description": "Pandorina is a genus of colonial green algae (family Volvocaceae). Colonies consist of 8, 16, or 32 pyriform or obovoid cells tightly packed together at the center in a firm gelatinous sheath.",
+        "morphology": "Spherical to ellipsoid coenobium composed of 8, 16, or 32 cells. Cells are pear-shaped with two flagella extending through the mucilage matrix.",
+        "reference_images": [
+            "https://mcjlybcefpwmdjzgkesi.supabase.co/storage/v1/object/public/algae_images/reference_images/pandorina_morum.png"
+        ]
     }
 }
 

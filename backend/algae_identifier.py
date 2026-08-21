@@ -14,7 +14,7 @@ from PIL import Image
 from algae_database import get_species_info
 
 
-DEFAULT_GEMINI_MODEL = "gemini-3.6-flash"
+DEFAULT_GEMINI_MODEL = "gemini-3.7-flash"
 
 
 def get_gemini_model_name() -> str:

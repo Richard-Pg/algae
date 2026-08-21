@@ -30,11 +30,11 @@ def make_png_bytes(mode="RGBA"):
 
 
 class GeminiModelConfigurationTests(unittest.TestCase):
-    def test_default_model_is_gemini_3_6_flash(self):
+    def test_default_model_is_gemini_3_7_flash(self):
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(
                 algae_identifier.get_gemini_model_name(),
-                "gemini-3.6-flash",
+                "gemini-3.7-flash",
             )
 
     def test_model_environment_override_is_trimmed(self):
@@ -84,7 +84,7 @@ class GeminiIdentificationTests(unittest.TestCase):
 
         generate_content.assert_awaited_once()
         request = generate_content.await_args.kwargs
-        self.assertEqual(request["model"], "gemini-3.6-flash")
+        self.assertEqual(request["model"], "gemini-3.7-flash")
         self.assertEqual(request["contents"][0], algae_identifier.IDENTIFICATION_PROMPT)
 
         image_part = request["contents"][1]
@@ -95,7 +95,7 @@ class GeminiIdentificationTests(unittest.TestCase):
         self.assertEqual(config.max_output_tokens, 4096)
         self.assertEqual(config.response_mime_type, "application/json")
         self.assertIsNone(config.temperature)
-        self.assertEqual(result["ai_model"], "gemini-3.6-flash")
+        self.assertEqual(result["ai_model"], "gemini-3.7-flash")
         self.assertEqual(result["ai_provider"], "google_gemini")
 
     def test_identified_result_keeps_database_enrichment(self):
