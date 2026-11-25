@@ -48,6 +48,14 @@ class GeminiModelConfigurationTests(unittest.TestCase):
                 "gemini-custom-model",
             )
 
+    def test_thinking_level_is_read_from_environment(self):
+        with patch.dict(os.environ, {"GEMINI_THINKING_LEVEL": " Low "}, clear=True):
+            self.assertEqual(algae_identifier.get_thinking_level(), "low")
+        with patch.dict(os.environ, {"GEMINI_THINKING_LEVEL": "turbo"}, clear=True):
+            self.assertIsNone(algae_identifier.get_thinking_level())
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertIsNone(algae_identifier.get_thinking_level())
+
     def test_missing_api_key_is_rejected(self):
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaisesRegex(ValueError, "GEMINI_API_KEY not set"):
@@ -95,6 +103,7 @@ class GeminiIdentificationTests(unittest.TestCase):
         self.assertEqual(config.max_output_tokens, 4096)
         self.assertEqual(config.response_mime_type, "application/json")
         self.assertIsNone(config.temperature)
+        self.assertIsNone(config.thinking_config)
         self.assertEqual(result["ai_model"], "gemini-4-hydrogen")
         self.assertEqual(result["ai_provider"], "google_gemini")
 

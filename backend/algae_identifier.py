@@ -6,6 +6,7 @@ Sends images to Gemini for analysis and returns structured algae identification 
 import io
 import json
 import os
+import time
 
 from google import genai
 from google.genai import types
@@ -19,6 +20,15 @@ DEFAULT_GEMINI_MODEL = "gemini-4-hydrogen"
 
 def get_gemini_model_name() -> str:
     return os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
+
+
+THINKING_LEVELS = {"minimal", "low", "medium", "high"}
+
+
+def get_thinking_level() -> str | None:
+    """GEMINI_THINKING_LEVEL: minimal, low, medium or high. Unset uses the model default."""
+    level = os.getenv("GEMINI_THINKING_LEVEL", "").strip().lower()
+    return level if level in THINKING_LEVELS else None
 
 
 def create_gemini_client() -> genai.Client:
@@ -169,15 +179,18 @@ async def identify_algae(image_bytes: bytes, filename: str = "image.jpg", normal
 
     # Only supported options are set; sampling controls are ignored by this model family.
     model_name = get_gemini_model_name()
+    thinking_level = get_thinking_level()
+    config_args = {"max_output_tokens": 4096, "response_mime_type": "application/json"}
+    if thinking_level:
+        config_args["thinking_config"] = types.ThinkingConfig(thinking_level=thinking_level.upper())
+    started = time.perf_counter()
     async with create_gemini_client().aio as client:
         response = await client.models.generate_content(
             model=model_name,
             contents=[IDENTIFICATION_PROMPT, image_part],
-            config=types.GenerateContentConfig(
-                max_output_tokens=4096,
-                response_mime_type="application/json",
-            ),
+            config=types.GenerateContentConfig(**config_args),
         )
+    latency_ms = round((time.perf_counter() - started) * 1000)
 
     text = (response.text or "").strip()
     try:
@@ -204,5 +217,7 @@ async def identify_algae(image_bytes: bytes, filename: str = "image.jpg", normal
         result["database_info"] = _database_view(db_info) if db_info else None
 
     result["ai_model"] = model_name
+    result["ai_thinking_level"] = thinking_level or "default"
+    result["ai_latency_ms"] = latency_ms
     result["ai_provider"] = "google_gemini"
     return result
