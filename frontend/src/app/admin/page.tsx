@@ -1,41 +1,22 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import Header from "@/components/Header";
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { Bell, BellOff, Check, ExternalLink, Inbox, Pencil, RotateCcw, ShieldAlert, X } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+import { Field, Input, OPTIONS, Select, Textarea } from "@/components/ui/Form";
+import { EmptyState, Notice, PageLoading, SpeciesName, Spinner } from "@/components/ui/Primitives";
+import { SourceTag, StatusBadge, statusLabel } from "@/components/ui/Tags";
 import { useAuth } from "@/contexts/AuthContext";
+import { api } from "@/lib/api";
+import { formatDate, percent, scientificName, yesNo } from "@/lib/format";
+import type { Submission, SubmissionStatus } from "@/lib/types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL || "haiming.peng@outlook.com";
-const toxinPresenceOptions = ["Yes", "No", "Unknown"];
-const riskLevelOptions = ["None", "Low", "Medium", "High", "Unknown"];
-const waterTypeOptions = ["Freshwater", "Marine", "Brackish", "Terrestrial", "Mixed/Variable", "Unknown"];
-const confidenceOptions = ["High", "Moderate", "Low", "Uncertain"];
-const sampleTypeOptions = ["Freshwater bloom", "Marine sample", "Brackish sample", "Lab culture", "Surface water", "Field sample", "Other"];
-const microscopyOptions = ["Brightfield", "Phase contrast", "DIC", "Fluorescence", "SEM", "Light microscopy", "Unknown"];
+const STATUSES: SubmissionStatus[] = ["pending", "needs_revision", "approved", "rejected"];
 
-interface Submission {
-  id: string;
-  user_email: string;
-  user_name: string;
-  proposed_genus: string;
-  proposed_species: string;
-  location_found: string;
-  user_notes: string;
-  submitted_taxonomy: Record<string, string> | null;
-  submitted_toxin: Record<string, string> | null;
-  submitted_ecology: Record<string, string> | null;
-  submitted_references: Array<{ label?: string; url?: string; notes?: string }> | null;
-  submitted_morphology: string | null;
-  collection_date: string | null;
-  sample_type: string | null;
-  microscopy_method: string | null;
-  contributor_confidence: string | null;
-  image_url: string | null;
-  ai_analysis: Record<string, unknown> | null;
-  status: string;
-  admin_notes: string | null;
-  created_at: string;
+interface Queue {
+  submissions: Submission[];
+  counts: Record<string, number | null>;
 }
 
 interface NotificationSettings {
@@ -44,546 +25,435 @@ interface NotificationSettings {
   recipient: string;
 }
 
-interface SubmissionEditState {
-  proposed_genus: string;
-  proposed_species: string;
-  location_found: string;
-  user_notes: string;
-  submitted_morphology: string;
-  collection_date: string;
-  sample_type: string;
-  microscopy_method: string;
-  contributor_confidence: string;
-  submitted_taxonomy: Record<string, string>;
-  submitted_toxin: Record<string, string>;
-  submitted_ecology: Record<string, string>;
-  references_text: string;
+type Row = { label: string; contributor?: string; ai?: string };
+
+function comparison(s: Submission): Row[] {
+  const ai = s.ai_analysis || null;
+  const db = ai?.database_info || {};
+  const gen = ai?.generated_details || {};
+  const aiTox = db.toxin || gen.toxin || {};
+  const aiEco = db.ecology || gen.ecology || {};
+  const t = s.submitted_toxin || {};
+  const e = s.submitted_ecology || {};
+  const tax = s.submitted_taxonomy || {};
+  return [
+    {
+      label: "Identification",
+      contributor: scientificName(s.proposed_genus, s.proposed_species || ""),
+      ai: ai?.identified ? `${scientificName(ai.primary_identification?.genus, ai.primary_identification?.species)} (${percent(ai.primary_identification?.confidence)})` : "Not identified",
+    },
+    { label: "Confidence", contributor: s.contributor_confidence || "", ai: "" },
+    { label: "Morphology", contributor: s.submitted_morphology || "", ai: ai?.primary_identification?.morphological_notes || db.morphology || "" },
+    { label: "Produces toxin", contributor: t.produces_toxin, ai: aiTox.produces_toxin === undefined ? "" : yesNo(aiTox.produces_toxin) },
+    { label: "Toxin type", contributor: t.toxin_type, ai: aiTox.toxin_type },
+    { label: "Risk level", contributor: t.risk_level, ai: aiTox.risk_level },
+    { label: "Water type", contributor: e.water_type, ai: aiEco.water_type },
+    { label: "Habitat", contributor: e.habitat, ai: aiEco.habitat },
+    { label: "Temperature", contributor: e.temperature_range, ai: aiEco.temperature_range },
+    { label: "Taxonomy", contributor: Object.values(tax).filter(Boolean).join(" › "), ai: Object.values(db.taxonomy || {}).filter(Boolean).join(" › ") },
+  ].filter((r) => r.contributor || r.ai);
 }
 
-const formatConfidence = (value: unknown) => {
-  if (typeof value !== "number" || Number.isNaN(value)) return "—";
-  const percent = value <= 1 ? value * 100 : value;
-  return `${Math.round(percent)}%`;
-};
+/** Flag only real disagreements: ignore blanks, "Unknown", and one value containing the other. */
+function differs(a?: string, b?: string) {
+  const x = (a || "").trim().toLowerCase();
+  const y = (b || "").trim().toLowerCase();
+  if (!x || !y || x === "unknown" || y === "unknown") return false;
+  return !x.includes(y) && !y.includes(x);
+}
 
-const dictValue = (value: Record<string, string> | null | undefined, key: string) => value?.[key] || "";
+function EditForm({ s, onSaved, onCancel }: { s: Submission; onSaved: (s: Submission) => void; onCancel: () => void }) {
+  const [f, setF] = useState({
+    proposed_genus: s.proposed_genus,
+    proposed_species: s.proposed_species || "",
+    location_found: s.location_found || "",
+    sample_type: s.sample_type || "",
+    microscopy_method: s.microscopy_method || "",
+    submitted_morphology: s.submitted_morphology || "",
+    toxin_type: s.submitted_toxin?.toxin_type || "",
+    risk_level: s.submitted_toxin?.risk_level || "",
+    produces_toxin: s.submitted_toxin?.produces_toxin || "",
+    water_type: s.submitted_ecology?.water_type || "",
+    habitat: s.submitted_ecology?.habitat || "",
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const set = (k: keyof typeof f, v: string) => setF((p) => ({ ...p, [k]: v }));
 
-const submissionToEditState = (sub: Submission): SubmissionEditState => ({
-  proposed_genus: sub.proposed_genus || "",
-  proposed_species: sub.proposed_species || "",
-  location_found: sub.location_found || "",
-  user_notes: sub.user_notes || "",
-  submitted_morphology: sub.submitted_morphology || "",
-  collection_date: sub.collection_date || "",
-  sample_type: sub.sample_type || "",
-  microscopy_method: sub.microscopy_method || "",
-  contributor_confidence: sub.contributor_confidence || "",
-  submitted_taxonomy: {
-    kingdom: dictValue(sub.submitted_taxonomy, "kingdom"),
-    phylum: dictValue(sub.submitted_taxonomy, "phylum"),
-    class: dictValue(sub.submitted_taxonomy, "class"),
-    order: dictValue(sub.submitted_taxonomy, "order"),
-    family: dictValue(sub.submitted_taxonomy, "family"),
-  },
-  submitted_toxin: {
-    produces_toxin: dictValue(sub.submitted_toxin, "produces_toxin"),
-    toxin_type: dictValue(sub.submitted_toxin, "toxin_type"),
-    risk_level: dictValue(sub.submitted_toxin, "risk_level"),
-    health_effects: dictValue(sub.submitted_toxin, "health_effects"),
-  },
-  submitted_ecology: {
-    habitat: dictValue(sub.submitted_ecology, "habitat"),
-    water_type: dictValue(sub.submitted_ecology, "water_type"),
-    bloom_conditions: dictValue(sub.submitted_ecology, "bloom_conditions"),
-    temperature_range: dictValue(sub.submitted_ecology, "temperature_range"),
-    indicator_of: dictValue(sub.submitted_ecology, "indicator_of"),
-  },
-  references_text: (sub.submitted_references || [])
-    .map((ref) => [ref.label, ref.url, ref.notes].filter(Boolean).join(" | "))
-    .join("\n"),
-});
-
-const parseReferences = (value: string) => (
-  value
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [label = "", url = "", notes = ""] = line.split("|").map((part) => part.trim());
-      return url ? { label, url, notes } : { label: "", url: label, notes: "" };
-    })
-);
-
-export default function AdminPage() {
-  const { user, session, loading } = useAuth();
-  const router = useRouter();
-  const [submissions, setSubmissions] = useState<Submission[]>([]);
-  const [statusFilter, setStatusFilter] = useState("pending");
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const [actionNotes, setActionNotes] = useState<Record<string, string>>({});
-  const [processing, setProcessing] = useState<string | null>(null);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings | null>(null);
-  const [settingsSaving, setSettingsSaving] = useState(false);
-  const [editForms, setEditForms] = useState<Record<string, SubmissionEditState>>({});
-  const [savingEdit, setSavingEdit] = useState<string | null>(null);
-
-  const isAdmin = user?.email?.trim().toLowerCase() === ADMIN_EMAIL.trim().toLowerCase();
-
-  const fetchSubmissions = async () => {
-    if (!isAdmin) return;
-    if (!session?.access_token) {
-      setFetchError("Waiting for your admin session...");
-      return;
-    }
-    setFetchError(null);
+  const save = async () => {
+    setBusy(true);
+    setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/admin/submissions?status=${statusFilter}`, {
-        headers: {
-          Authorization: `Bearer ${session?.access_token}`,
+      const r = await api<{ submission: Submission }>(`/api/admin/submissions/${s.id}`, {
+        method: "PUT",
+        json: {
+          proposed_genus: f.proposed_genus,
+          proposed_species: f.proposed_species,
+          location_found: f.location_found,
+          sample_type: f.sample_type,
+          microscopy_method: f.microscopy_method,
+          submitted_morphology: f.submitted_morphology,
+          submitted_toxin: { ...(s.submitted_toxin || {}), toxin_type: f.toxin_type, risk_level: f.risk_level, produces_toxin: f.produces_toxin },
+          submitted_ecology: { ...(s.submitted_ecology || {}), water_type: f.water_type, habitat: f.habitat },
         },
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || `Backend returned ${res.status}`);
-      }
-      const data = await res.json();
-      setSubmissions(data.submissions);
-    } catch (err) {
-      setFetchError(err instanceof Error ? `Failed to load submissions: ${err.message}` : "Failed to load submissions.");
+      onSaved(r.submission);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setBusy(false);
     }
   };
 
-  const fetchNotificationSettings = async () => {
-    if (!isAdmin || !session?.access_token) return;
-    try {
-      const res = await fetch(`${API_BASE}/api/admin/notification-settings`, {
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
-      });
-      if (!res.ok) throw new Error("Failed to fetch notification settings");
-      setNotificationSettings(await res.json());
-    } catch {
-      setNotificationSettings(null);
-    }
-  };
+  return (
+    <div className="rounded-xl border border-line bg-paper p-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Genus" htmlFor="ed-genus" required><Input id="ed-genus" value={f.proposed_genus} onChange={(e) => set("proposed_genus", e.target.value)} /></Field>
+        <Field label="Species epithet" htmlFor="ed-species"><Input id="ed-species" value={f.proposed_species} onChange={(e) => set("proposed_species", e.target.value)} /></Field>
+        <Field label="Produces toxin" htmlFor="ed-produces"><Select id="ed-produces" options={OPTIONS.toxinPresence} value={f.produces_toxin} onChange={(e) => set("produces_toxin", e.target.value)} /></Field>
+        <Field label="Risk level" htmlFor="ed-risk"><Select id="ed-risk" options={OPTIONS.riskLevel} value={f.risk_level} onChange={(e) => set("risk_level", e.target.value)} /></Field>
+        <Field label="Toxin type" htmlFor="ed-toxin"><Input id="ed-toxin" value={f.toxin_type} onChange={(e) => set("toxin_type", e.target.value)} /></Field>
+        <Field label="Water type" htmlFor="ed-water"><Select id="ed-water" options={OPTIONS.waterType} value={f.water_type} onChange={(e) => set("water_type", e.target.value)} /></Field>
+        <Field label="Habitat" htmlFor="ed-habitat"><Input id="ed-habitat" value={f.habitat} onChange={(e) => set("habitat", e.target.value)} /></Field>
+        <Field label="Location" htmlFor="ed-location"><Input id="ed-location" value={f.location_found} onChange={(e) => set("location_found", e.target.value)} /></Field>
+        <Field label="Sample type" htmlFor="ed-sample"><Select id="ed-sample" options={OPTIONS.sampleType} value={f.sample_type} onChange={(e) => set("sample_type", e.target.value)} /></Field>
+        <Field label="Microscopy" htmlFor="ed-micro"><Select id="ed-micro" options={OPTIONS.microscopy} value={f.microscopy_method} onChange={(e) => set("microscopy_method", e.target.value)} /></Field>
+        <Field label="Morphology" htmlFor="ed-morph" className="sm:col-span-2"><Textarea id="ed-morph" rows={3} value={f.submitted_morphology} onChange={(e) => set("submitted_morphology", e.target.value)} /></Field>
+      </div>
+      {error && <Notice tone="error" className="mt-3">{error}</Notice>}
+      <div className="mt-4 flex justify-end gap-2">
+        <Button variant="secondary" size="sm" onClick={onCancel}>Cancel</Button>
+        <Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : "Save edits"}</Button>
+      </div>
+    </div>
+  );
+}
+
+function Detail({ s, onReviewed, onUpdated }: { s: Submission; onReviewed: (msg: string) => void; onUpdated: (s: Submission) => void }) {
+  const [notes, setNotes] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const reviewable = s.status === "pending" || s.status === "needs_revision";
 
   useEffect(() => {
-    if (isAdmin) {
-      fetchSubmissions();
-      fetchNotificationSettings();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin, statusFilter, session?.access_token]);
+    setNotes("");
+    setEditing(false);
+    setError(null);
+  }, [s.id]);
 
-  const handleToggleNotifications = async () => {
-    if (!session?.access_token || !notificationSettings) return;
-    setSettingsSaving(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/admin/notification-settings`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ enabled: !notificationSettings.enabled }),
-      });
-      if (!res.ok) throw new Error("Failed to save notification settings");
-      setNotificationSettings(await res.json());
-    } catch {
-      alert("Failed to update email notification settings.");
-    } finally {
-      setSettingsSaving(false);
-    }
-  };
-
-  const handleAction = async (id: string, action: "approve" | "reject") => {
-    if (!session?.access_token) {
-      alert("Your session has expired. Please sign in again.");
+  const act = async (action: "approve" | "reject" | "request-revision") => {
+    if (action === "request-revision" && !notes.trim()) {
+      setError("Write what the contributor should change before returning it.");
       return;
     }
-    setProcessing(id);
+    setBusy(action);
+    setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/admin/submissions/${id}/${action}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.access_token}`,
-        },
-        body: JSON.stringify({
-          admin_notes: actionNotes[id] || "",
-        }),
-      });
-      if (!res.ok) throw new Error("Action failed");
-      await fetchSubmissions();
-      setExpanded(null);
-    } catch {
-      alert("Action failed. Please try again.");
+      const r = await api<{ message: string }>(`/api/admin/submissions/${s.id}/${action}`, { json: { admin_notes: notes } });
+      onReviewed(r.message);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Action failed");
     } finally {
-      setProcessing(null);
+      setBusy(null);
     }
   };
 
-  const openSubmission = (sub: Submission) => {
-    setExpanded(expanded === sub.id ? null : sub.id);
-    setEditForms((prev) => prev[sub.id] ? prev : { ...prev, [sub.id]: submissionToEditState(sub) });
-  };
+  const rows = comparison(s);
+  return (
+    <article className="space-y-6">
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <SpeciesName name={scientificName(s.proposed_genus, s.proposed_species || "")} className="text-4xl" />
+            <StatusBadge status={s.status} />
+          </div>
+          <p className="mt-1 text-sm text-muted">
+            {s.user_name || "Unknown contributor"}
+            {s.user_email ? ` · ${s.user_email}` : ""} · submitted {formatDate(s.created_at, true)}
+          </p>
+        </div>
+        {reviewable && !editing && (
+          <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
+            <Pencil className="size-4" aria-hidden /> Edit fields
+          </Button>
+        )}
+      </header>
 
-  const updateEditForm = (id: string, patch: Partial<SubmissionEditState>) => {
-    setEditForms((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
-  };
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
+        <div>
+          <a href={s.image_url || "#"} target="_blank" rel="noreferrer" className="block aspect-square overflow-hidden rounded-xl bg-ink">
+            {s.image_url && <img src={s.image_url} alt="Submitted specimen" className="size-full object-contain" />}
+          </a>
+          <dl className="mt-4 space-y-2 text-sm">
+            {[
+              ["Location", s.location_found],
+              ["Collected", s.collection_date],
+              ["Sample", s.sample_type],
+              ["Microscopy", s.microscopy_method],
+            ].map(([k, v]) => (
+              <div key={k} className="flex justify-between gap-3">
+                <dt className="text-muted">{k}</dt>
+                <dd className="text-right">{v || "—"}</dd>
+              </div>
+            ))}
+          </dl>
+          {s.identification_id && (
+            <Link href={`/results/${s.identification_id}`} className="mt-3 inline-flex items-center gap-1 text-sm text-brand hover:underline">
+              Original identification <ExternalLink className="size-3.5" aria-hidden />
+            </Link>
+          )}
+        </div>
 
-  const saveSubmissionEdit = async (id: string) => {
-    const form = editForms[id];
-    if (!session?.access_token || !form) return;
-    setSavingEdit(id);
+        <div className="min-w-0 space-y-5">
+          {editing ? (
+            <EditForm
+              s={s}
+              onCancel={() => setEditing(false)}
+              onSaved={(u) => {
+                setEditing(false);
+                onUpdated({ ...s, ...u });
+              }}
+            />
+          ) : (
+            <div className="overflow-hidden rounded-xl border border-line">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-paper">
+                  <tr>
+                    <th scope="col" className="w-32 px-3 py-2 font-medium text-muted">Field</th>
+                    <th scope="col" className="px-3 py-2"><SourceTag kind="contributor" /></th>
+                    <th scope="col" className="px-3 py-2"><SourceTag kind="ai" label="AI / database" /></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {rows.map((r) => {
+                    const diff = differs(r.contributor, r.ai);
+                    return (
+                      <tr key={r.label} className={diff ? "bg-risk-medium-tint/60" : ""}>
+                        <th scope="row" className="px-3 py-2.5 align-top font-normal text-muted">
+                          {r.label}
+                          {diff && <span className="mt-0.5 block text-[11px] text-risk-medium">differs</span>}
+                        </th>
+                        <td className="px-3 py-2.5 align-top">{r.contributor || <span className="text-muted">—</span>}</td>
+                        <td className="px-3 py-2.5 align-top text-[#2b3631]">{r.ai || <span className="text-muted">—</span>}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {s.user_notes && (
+            <div>
+              <div className="label">Contributor notes</div>
+              <p className="mt-1 text-[15px] leading-relaxed whitespace-pre-line">{s.user_notes}</p>
+            </div>
+          )}
+          {!!s.submitted_references?.length && (
+            <div>
+              <div className="label">References</div>
+              <ul className="mt-1 space-y-1 text-sm">
+                {s.submitted_references.map((r, i) => (
+                  <li key={i}>
+                    {r.url && /^https?:/.test(r.url) ? (
+                      <a href={r.url} target="_blank" rel="noreferrer" className="break-all text-brand hover:underline">{r.label || r.url}</a>
+                    ) : (
+                      r.label || r.url
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {s.admin_notes && (
+            <div className="rounded-lg bg-paper p-3 text-sm">
+              <span className="label">Previous reviewer notes</span>
+              <p className="mt-1">{s.admin_notes}</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {reviewable && (
+        <section aria-label="Review decision" className="rounded-xl border border-line bg-surface p-5">
+          <Field label="Note to the contributor" htmlFor="review-notes" hint="Sent by email and shown in their workspace. Required when asking for a revision.">
+            <Textarea id="review-notes" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />
+          </Field>
+          {error && <Notice tone="error" className="mt-3">{error}</Notice>}
+          <div className="mt-4 flex flex-wrap justify-end gap-2">
+            <Button variant="danger" onClick={() => act("reject")} disabled={Boolean(busy)}>
+              <X className="size-4" aria-hidden /> {busy === "reject" ? "Rejecting…" : "Reject"}
+            </Button>
+            <Button variant="secondary" onClick={() => act("request-revision")} disabled={Boolean(busy)}>
+              <RotateCcw className="size-4" aria-hidden /> {busy === "request-revision" ? "Sending…" : "Request revision"}
+            </Button>
+            <Button onClick={() => act("approve")} disabled={Boolean(busy)}>
+              <Check className="size-4" aria-hidden /> {busy === "approve" ? "Approving…" : "Approve & publish"}
+            </Button>
+          </div>
+        </section>
+      )}
+    </article>
+  );
+}
+
+export default function AdminPage() {
+  const { user, loading, meLoading, isAdmin, requestSignIn } = useAuth();
+  const [status, setStatus] = useState<SubmissionStatus>("pending");
+  const [queue, setQueue] = useState<Queue | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [flash, setFlash] = useState<string | null>(null);
+  const [notify, setNotify] = useState<NotificationSettings | null>(null);
+  const [notifyBusy, setNotifyBusy] = useState(false);
+
+  const load = useCallback(async (s: SubmissionStatus) => {
+    setQueue(null);
+    setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/admin/submissions/${id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          proposed_genus: form.proposed_genus,
-          proposed_species: form.proposed_species,
-          location_found: form.location_found,
-          user_notes: form.user_notes,
-          submitted_morphology: form.submitted_morphology,
-          collection_date: form.collection_date,
-          sample_type: form.sample_type,
-          microscopy_method: form.microscopy_method,
-          contributor_confidence: form.contributor_confidence,
-          submitted_taxonomy: form.submitted_taxonomy,
-          submitted_toxin: form.submitted_toxin,
-          submitted_ecology: form.submitted_ecology,
-          submitted_references: parseReferences(form.references_text),
-        }),
-      });
-      if (!res.ok) throw new Error("Save failed");
-      const data = await res.json();
-      const updated = data.submission as Submission;
-      setSubmissions((items) => items.map((item) => item.id === id ? updated : item));
-      setEditForms((prev) => ({ ...prev, [id]: submissionToEditState(updated) }));
-    } catch {
-      alert("Failed to save edits. Please try again.");
-    } finally {
-      setSavingEdit(null);
+      const q = await api<Queue>(`/api/admin/submissions?status=${s}`);
+      setQueue(q);
+      setSelectedId((cur) => (q.submissions.some((x) => x.id === cur) ? cur : q.submissions[0]?.id ?? null));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't load the queue.");
     }
-  };
+  }, []);
 
-  if (loading) return <><Header /><main className="main-content"><div className="text-center" style={{ padding: "4rem" }}>Loading...</div></main></>;
+  useEffect(() => {
+    if (!isAdmin) return;
+    load(status);
+  }, [isAdmin, status, load]);
 
+  useEffect(() => {
+    if (!isAdmin) return;
+    api<NotificationSettings>("/api/admin/notification-settings").then(setNotify).catch(() => setNotify(null));
+  }, [isAdmin]);
+
+  if (loading || meLoading) return <PageLoading />;
   if (!user || !isAdmin) {
     return (
-      <>
-        <Header />
-        <main className="main-content">
-          <div className="contribute-hero">
-            <div style={{ fontSize: "3rem" }}>🔒</div>
-            <h1>Admin Access Only</h1>
-            <p>This page is restricted to the AlgaeAI administrator.</p>
-            <button className="btn-primary" onClick={() => router.push("/")}>Go Home</button>
-          </div>
-        </main>
-      </>
+      <div className="mx-auto max-w-2xl px-4 py-20">
+        <EmptyState
+          icon={<ShieldAlert className="size-8" aria-hidden />}
+          title="Reviewers only"
+          action={!user ? <Button onClick={() => requestSignIn("Sign in with a reviewer account.")}>Sign in</Button> : undefined}
+        >
+          The review queue is available to accounts listed as reviewers on the server (ADMIN_EMAILS).
+        </EmptyState>
+      </div>
     );
   }
 
+  const selected = queue?.submissions.find((s) => s.id === selectedId) || null;
+
+  const toggleNotify = async () => {
+    if (!notify) return;
+    setNotifyBusy(true);
+    try {
+      setNotify(await api<NotificationSettings>("/api/admin/notification-settings", { method: "PUT", json: { enabled: !notify.enabled } }));
+    } finally {
+      setNotifyBusy(false);
+    }
+  };
+
   return (
     <>
-      <Header />
-      <main className="main-content">
-        <section style={{ marginBottom: "var(--space-xl)" }}>
-          <div className="hero-badge"><span className="pulse-dot" />Admin Dashboard</div>
-          <h1 style={{ fontFamily: "var(--font-serif)", fontSize: "2rem", marginTop: "var(--space-sm)" }}>
-            Species Submission Review
-          </h1>
-          <p style={{ color: "var(--text-secondary)", marginTop: "var(--space-sm)" }}>
-            Review, approve, or reject community-submitted species discoveries.
-          </p>
-        </section>
-
-        {notificationSettings && (
-          <section className="glass-card" style={{ marginBottom: "var(--space-xl)", padding: "var(--space-lg)", display: "flex", justifyContent: "space-between", gap: "var(--space-md)", alignItems: "center", flexWrap: "wrap" }}>
-            <div>
-              <h2 style={{ fontFamily: "var(--font-serif)", fontSize: "1.25rem", marginBottom: "var(--space-xs)" }}>
-                Email Notifications
-              </h2>
-              <p style={{ color: "var(--text-secondary)", margin: 0 }}>
-                New contribution alerts are sent to {notificationSettings.recipient}.
-                {!notificationSettings.configured && " SMTP is not configured yet."}
-              </p>
-            </div>
+      <section className="on-ink bg-ink text-ink-text">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-end justify-between gap-4 px-4 pt-10 pb-6 sm:px-8">
+          <div>
+            <p className="label">Review queue</p>
+            <h1 className="mt-2 font-serif text-5xl text-white">Community observations</h1>
+          </div>
+          {notify && (
             <button
               type="button"
-              className={notificationSettings.enabled ? "btn-primary" : "btn-secondary"}
-              disabled={settingsSaving}
-              onClick={handleToggleNotifications}
+              onClick={toggleNotify}
+              disabled={notifyBusy}
+              title={notify.configured ? `Alerts go to ${notify.recipient}` : "SMTP isn't configured on the server yet"}
+              className="inline-flex h-10 items-center gap-2 rounded-lg border border-ink-line px-3 text-sm text-ink-soft hover:border-ink-muted hover:text-white"
             >
-              {settingsSaving ? "Saving..." : notificationSettings.enabled ? "Email Alerts On" : "Email Alerts Off"}
+              {notify.enabled ? <Bell className="size-4 text-signal" aria-hidden /> : <BellOff className="size-4" aria-hidden />}
+              Email alerts {notify.enabled ? "on" : "off"}
+              {!notify.configured && <span className="text-xs text-risk-high-on-ink">(SMTP not set)</span>}
             </button>
-          </section>
-        )}
-
-        {/* Filter Tabs */}
-        <div className="admin-tabs">
-          {["pending", "approved", "rejected"].map((s) => (
-            <button key={s} className={`admin-tab ${statusFilter === s ? "active" : ""}`} onClick={() => setStatusFilter(s)}>
-              {s.charAt(0).toUpperCase() + s.slice(1)}
-            </button>
-          ))}
+          )}
         </div>
-
-        {fetchError && <div className="glass-card error-card mt-lg">{fetchError}</div>}
-
-        {submissions.length === 0 && !fetchError && (
-          <div className="glass-card" style={{ textAlign: "center", padding: "var(--space-3xl)", color: "var(--text-muted)" }}>
-            <div style={{ fontSize: "2rem", marginBottom: "var(--space-md)" }}>📭</div>
-            <p>No {statusFilter} submissions.</p>
+        <div className="mx-auto max-w-7xl px-4 sm:px-8">
+          <div role="tablist" aria-label="Status" className="flex gap-6 overflow-x-auto">
+            {STATUSES.map((s) => (
+              <button
+                key={s}
+                type="button"
+                role="tab"
+                aria-selected={status === s}
+                onClick={() => setStatus(s)}
+                className={`-mb-px flex min-h-12 shrink-0 items-center gap-2 border-b-2 text-[15px] ${status === s ? "border-signal text-white" : "border-transparent text-ink-soft hover:text-white"}`}
+              >
+                {statusLabel[s]}
+                <span className="rounded bg-ink-raised px-1.5 font-mono text-xs text-ink-soft">{queue?.counts?.[s] ?? "·"}</span>
+              </button>
+            ))}
           </div>
+        </div>
+      </section>
+
+      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-8">
+        {flash && (
+          <Notice tone="success" className="mb-4" action={<Button size="sm" variant="ghost" onClick={() => setFlash(null)}>Dismiss</Button>}>
+            {flash}
+          </Notice>
+        )}
+        {error && <Notice tone="error" className="mb-4">{error}</Notice>}
+        {!queue && !error && <div className="flex justify-center py-16 text-muted"><Spinner /></div>}
+
+        {queue && queue.submissions.length === 0 && (
+          <EmptyState icon={<Inbox className="size-8" aria-hidden />} title={`Nothing ${statusLabel[status].toLowerCase()}`}>
+            {status === "pending" ? "New observations will appear here." : "No submissions have this status."}
+          </EmptyState>
         )}
 
-        {/* Submission Cards */}
-        <div className="admin-submissions-list">
-          {submissions.map((sub) => (
-            <div key={sub.id} className="admin-submission-card glass-card">
-              {/* Summary Row */}
-              <div className="admin-submission-summary" onClick={() => openSubmission(sub)}>
-                {sub.image_url && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={sub.image_url} alt="Specimen" className="admin-submission-thumb" />
-                )}
-                <div className="admin-submission-info">
-                  <div className="admin-submission-genus">
-                    <em>{sub.proposed_genus}</em>
-                    {sub.proposed_species && <span> {sub.proposed_species}</span>}
-                  </div>
-                  <div className="admin-submission-meta">
-                    By {sub.user_name || sub.user_email} · {new Date(sub.created_at).toLocaleDateString()}
-                    {sub.location_found && <> · 📍 {sub.location_found}</>}
-                  </div>
-                </div>
-                <div className={`admin-status-badge admin-status-${sub.status}`}>
-                  {sub.status}
-                </div>
-                <span className="admin-expand-arrow">{expanded === sub.id ? "▲" : "▼"}</span>
-              </div>
-
-              {/* Expanded Details */}
-              {expanded === sub.id && (
-                <div className="admin-submission-detail fade-in">
-                  <div className="admin-detail-grid">
-                    {/* Image large */}
-                    {sub.image_url && (
-                      <div>
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={sub.image_url} alt="Specimen full" style={{ width: "100%", borderRadius: "var(--radius-md)", border: "1px solid var(--border-subtle)" }} />
-                      </div>
-                    )}
-                    <div>
-                      {sub.user_notes && (
-                        <div className="admin-detail-section">
-                          <div className="admin-detail-label">Contributor Notes</div>
-                          <p>{sub.user_notes}</p>
-                        </div>
-                      )}
-                      {sub.ai_analysis && (
-                        <div className="admin-detail-section">
-                          <div className="admin-detail-label">AI Analysis</div>
-                          <div className="admin-ai-summary">
-                            <div><strong>Identified as:</strong> {(sub.ai_analysis as Record<string, {genus?: string}>).primary_identification?.genus ?? "—"}</div>
-                            <div><strong>Confidence:</strong> {formatConfidence((sub.ai_analysis as Record<string, {confidence?: number}>).primary_identification?.confidence)}</div>
-                            <div><strong>Description:</strong> {(sub.ai_analysis as Record<string, string>).description ?? "—"}</div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {sub.status === "pending" && (
-                    <div className="admin-action-row">
-                      {editForms[sub.id] && (
-                        <div className="admin-detail-section" style={{ marginBottom: "var(--space-lg)" }}>
-                          <div className="admin-detail-label">Edit Submission Before Review</div>
-                          <div className="contribute-fields-row">
-                            <div className="contribute-field">
-                              <label>Genus</label>
-                              <input className="contribute-input" value={editForms[sub.id].proposed_genus}
-                                onChange={(e) => updateEditForm(sub.id, { proposed_genus: e.target.value })} />
-                            </div>
-                            <div className="contribute-field">
-                              <label>Species</label>
-                              <input className="contribute-input" value={editForms[sub.id].proposed_species}
-                                onChange={(e) => updateEditForm(sub.id, { proposed_species: e.target.value })} />
-                            </div>
-                          </div>
-                          <div className="contribute-fields-row" style={{ marginTop: "var(--space-md)" }}>
-                            <div className="contribute-field">
-                              <label>Location</label>
-                              <input className="contribute-input" value={editForms[sub.id].location_found}
-                                onChange={(e) => updateEditForm(sub.id, { location_found: e.target.value })} />
-                            </div>
-                            <div className="contribute-field">
-                              <label>Sample type</label>
-                              <select className="contribute-input" value={editForms[sub.id].sample_type}
-                                onChange={(e) => updateEditForm(sub.id, { sample_type: e.target.value })}>
-                                <option value="">Select...</option>
-                                {sampleTypeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-                              </select>
-                            </div>
-                          </div>
-                          <div className="contribute-fields-row" style={{ marginTop: "var(--space-md)" }}>
-                            <div className="contribute-field">
-                              <label>Collection date</label>
-                              <input type="date" className="contribute-input" value={editForms[sub.id].collection_date}
-                                onChange={(e) => updateEditForm(sub.id, { collection_date: e.target.value })} />
-                            </div>
-                            <div className="contribute-field">
-                              <label>Microscopy method</label>
-                              <select className="contribute-input" value={editForms[sub.id].microscopy_method}
-                                onChange={(e) => updateEditForm(sub.id, { microscopy_method: e.target.value })}>
-                                <option value="">Select...</option>
-                                {microscopyOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-                              </select>
-                            </div>
-                            <div className="contribute-field">
-                              <label>Contributor confidence</label>
-                              <select className="contribute-input" value={editForms[sub.id].contributor_confidence}
-                                onChange={(e) => updateEditForm(sub.id, { contributor_confidence: e.target.value })}>
-                                <option value="">Select...</option>
-                                {confidenceOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-                              </select>
-                            </div>
-                          </div>
-                          <div className="contribute-field" style={{ marginTop: "var(--space-md)" }}>
-                            <label>Contributor notes</label>
-                            <textarea className="contribute-input contribute-textarea" rows={3} value={editForms[sub.id].user_notes}
-                              onChange={(e) => updateEditForm(sub.id, { user_notes: e.target.value })} />
-                          </div>
-                          <div className="contribute-field" style={{ marginTop: "var(--space-md)" }}>
-                            <label>Morphology</label>
-                            <textarea className="contribute-input contribute-textarea" rows={3} value={editForms[sub.id].submitted_morphology}
-                              onChange={(e) => updateEditForm(sub.id, { submitted_morphology: e.target.value })} />
-                          </div>
-
-                          <details style={{ marginTop: "var(--space-md)" }}>
-                            <summary className="admin-detail-label" style={{ cursor: "pointer" }}>Taxonomy, toxicity, ecology, references</summary>
-                            <div className="contribute-fields-row" style={{ marginTop: "var(--space-md)" }}>
-                              {(["kingdom", "phylum", "class", "order", "family"] as const).map((key) => (
-                                <div className="contribute-field" key={key}>
-                                  <label>{key}</label>
-                                  <input className="contribute-input" value={editForms[sub.id].submitted_taxonomy[key] || ""}
-                                    onChange={(e) => updateEditForm(sub.id, { submitted_taxonomy: { ...editForms[sub.id].submitted_taxonomy, [key]: e.target.value } })} />
-                                </div>
-                              ))}
-                            </div>
-                            <div className="contribute-fields-row" style={{ marginTop: "var(--space-md)" }}>
-                              <div className="contribute-field">
-                                <label>produces toxin</label>
-                                <select className="contribute-input" value={editForms[sub.id].submitted_toxin.produces_toxin || ""}
-                                  onChange={(e) => updateEditForm(sub.id, { submitted_toxin: { ...editForms[sub.id].submitted_toxin, produces_toxin: e.target.value } })}>
-                                  <option value="">Select...</option>
-                                  {toxinPresenceOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-                                </select>
-                              </div>
-                              <div className="contribute-field">
-                                <label>toxin type</label>
-                                <input className="contribute-input" value={editForms[sub.id].submitted_toxin.toxin_type || ""}
-                                  onChange={(e) => updateEditForm(sub.id, { submitted_toxin: { ...editForms[sub.id].submitted_toxin, toxin_type: e.target.value } })} />
-                              </div>
-                              <div className="contribute-field">
-                                <label>risk level</label>
-                                <select className="contribute-input" value={editForms[sub.id].submitted_toxin.risk_level || ""}
-                                  onChange={(e) => updateEditForm(sub.id, { submitted_toxin: { ...editForms[sub.id].submitted_toxin, risk_level: e.target.value } })}>
-                                  <option value="">Select...</option>
-                                  {riskLevelOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-                                </select>
-                              </div>
-                              <div className="contribute-field">
-                                <label>health effects</label>
-                                <input className="contribute-input" value={editForms[sub.id].submitted_toxin.health_effects || ""}
-                                  onChange={(e) => updateEditForm(sub.id, { submitted_toxin: { ...editForms[sub.id].submitted_toxin, health_effects: e.target.value } })} />
-                              </div>
-                            </div>
-                            <div className="contribute-fields-row" style={{ marginTop: "var(--space-md)" }}>
-                              <div className="contribute-field">
-                                <label>habitat</label>
-                                <input className="contribute-input" value={editForms[sub.id].submitted_ecology.habitat || ""}
-                                  onChange={(e) => updateEditForm(sub.id, { submitted_ecology: { ...editForms[sub.id].submitted_ecology, habitat: e.target.value } })} />
-                              </div>
-                              <div className="contribute-field">
-                                <label>water type</label>
-                                <select className="contribute-input" value={editForms[sub.id].submitted_ecology.water_type || ""}
-                                  onChange={(e) => updateEditForm(sub.id, { submitted_ecology: { ...editForms[sub.id].submitted_ecology, water_type: e.target.value } })}>
-                                  <option value="">Select...</option>
-                                  {waterTypeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-                                </select>
-                              </div>
-                              {(["bloom_conditions", "temperature_range", "indicator_of"] as const).map((key) => (
-                                <div className="contribute-field" key={key}>
-                                  <label>{key.replaceAll("_", " ")}</label>
-                                  <input className="contribute-input" value={editForms[sub.id].submitted_ecology[key] || ""}
-                                    onChange={(e) => updateEditForm(sub.id, { submitted_ecology: { ...editForms[sub.id].submitted_ecology, [key]: e.target.value } })} />
-                                </div>
-                              ))}
-                            </div>
-                            <div className="contribute-field" style={{ marginTop: "var(--space-md)" }}>
-                              <label>References, one per line. Use label | url | notes if useful.</label>
-                              <textarea className="contribute-input contribute-textarea" rows={4} value={editForms[sub.id].references_text}
-                                onChange={(e) => updateEditForm(sub.id, { references_text: e.target.value })} />
-                            </div>
-                          </details>
-                          <button type="button" className="btn-secondary" style={{ marginTop: "var(--space-md)" }}
-                            disabled={savingEdit === sub.id}
-                            onClick={() => saveSubmissionEdit(sub.id)}>
-                            {savingEdit === sub.id ? "Saving..." : "Save Edits"}
-                          </button>
-                        </div>
-                      )}
-
-                      <textarea
-                        placeholder="Optional notes to the contributor..."
-                        className="contribute-input contribute-textarea"
-                        style={{ marginBottom: "var(--space-md)" }}
-                        rows={2}
-                        value={actionNotes[sub.id] || ""}
-                        onChange={(e) => setActionNotes({ ...actionNotes, [sub.id]: e.target.value })}
-                      />
-                      <div style={{ display: "flex", gap: "var(--space-md)" }}>
-                        <button
-                          className="btn-primary"
-                          style={{ background: "var(--accent-secondary)" }}
-                          disabled={processing === sub.id}
-                          onClick={() => handleAction(sub.id, "approve")}
-                        >
-                          {processing === sub.id ? "Processing..." : "✓ Approve & Add to Database"}
-                        </button>
-                        <button
-                          className="btn-secondary"
-                          style={{ color: "var(--accent-danger)", borderColor: "var(--accent-danger)" }}
-                          disabled={processing === sub.id}
-                          onClick={() => handleAction(sub.id, "reject")}
-                        >
-                          ✕ Reject
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {sub.admin_notes && (
-                    <div className="admin-detail-section" style={{ marginTop: "var(--space-md)", borderTop: "1px solid var(--border-subtle)", paddingTop: "var(--space-md)" }}>
-                      <div className="admin-detail-label">Admin Notes</div>
-                      <p>{sub.admin_notes}</p>
-                    </div>
-                  )}
-                </div>
+        {queue && queue.submissions.length > 0 && (
+          <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
+            <ul className="max-h-[calc(100vh-14rem)] self-start divide-y divide-line overflow-y-auto rounded-xl border border-line bg-surface lg:sticky lg:top-20">
+              {queue.submissions.map((s) => (
+                <li key={s.id}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedId(s.id)}
+                    aria-current={s.id === selectedId}
+                    className={`flex w-full items-center gap-3 p-3 text-left ${s.id === selectedId ? "bg-brand-tint" : "hover:bg-paper"}`}
+                  >
+                    <span className="size-12 shrink-0 overflow-hidden rounded-md bg-ink-raised">
+                      {s.image_url && <img src={s.image_url} alt="" className="size-full object-cover" loading="lazy" />}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <SpeciesName name={scientificName(s.proposed_genus, s.proposed_species || "")} className="block truncate text-lg leading-tight" />
+                      <span className="block truncate text-xs text-muted">
+                        {s.user_name || "Unknown"} · {formatDate(s.created_at)}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className="min-w-0 rounded-xl border border-line bg-surface p-5 sm:p-6">
+              {selected ? (
+                <Detail
+                  s={selected}
+                  onReviewed={(msg) => {
+                    setFlash(msg);
+                    load(status);
+                  }}
+                  onUpdated={(u) => setQueue((q) => (q ? { ...q, submissions: q.submissions.map((x) => (x.id === u.id ? u : x)) } : q))}
+                />
+              ) : (
+                <p className="text-muted">Select a submission.</p>
               )}
             </div>
-          ))}
-        </div>
-      </main>
+          </div>
+        )}
+      </div>
     </>
   );
 }
