@@ -135,7 +135,7 @@ class GeminiIdentificationTests(unittest.TestCase):
             patch.object(
                 algae_identifier,
                 "get_species_info",
-                return_value=database_payload,
+                new=AsyncMock(return_value=database_payload),
             ),
         ):
             result = asyncio.run(
