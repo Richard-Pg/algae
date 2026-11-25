@@ -1,190 +1,78 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
+import { useEffect, useState, type FormEvent } from "react";
+import { Check, KeyRound, TriangleAlert } from "lucide-react";
+import { Button, ButtonLink } from "@/components/ui/Button";
+import { Field, Input } from "@/components/ui/Form";
+import { EmptyState, Notice, PageLoading, Panel } from "@/components/ui/Primitives";
 import { useAuth } from "@/contexts/AuthContext";
 
 export default function ResetPasswordPage() {
-  const { updatePassword, user } = useAuth();
-  const router = useRouter();
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const { updatePassword, user, loading } = useAuth();
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
   const [ready, setReady] = useState(false);
 
-  // Wait for the auth session to be established from the recovery link
+  // Supabase needs a moment to exchange the recovery token in the URL.
   useEffect(() => {
-    // Give Supabase a moment to process the recovery token from the URL hash
-    const timer = setTimeout(() => setReady(true), 1000);
-    return () => clearTimeout(timer);
+    const t = setTimeout(() => setReady(true), 1000);
+    return () => clearTimeout(t);
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-
-    if (!newPassword || !confirmPassword) {
-      setError("Please fill in both fields.");
-      return;
-    }
-
-    if (newPassword.length < 6) {
-      setError("Password must be at least 6 characters.");
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      setError("Passwords do not match.");
-      return;
-    }
-
-    setLoading(true);
-    const { error } = await updatePassword(newPassword);
-    if (error) {
-      setError(error);
-    } else {
-      setSuccess(true);
-    }
-    setLoading(false);
+    if (password.length < 6) return setError("Passwords need at least 6 characters.");
+    if (password !== confirm) return setError("The passwords don't match.");
+    setBusy(true);
+    const { error } = await updatePassword(password);
+    setBusy(false);
+    if (error) setError(error);
+    else setDone(true);
   };
 
-  if (!ready) {
-    return (
-      <>
-        <Header />
-        <main className="main-content">
-          <div className="reset-password-container">
-            <div className="glass-card reset-card">
-              <div className="dna-spinner" style={{ margin: "2rem auto" }} />
-              <p style={{ textAlign: "center", color: "var(--text-muted)" }}>
-                Verifying your reset link...
-              </p>
-            </div>
-          </div>
-        </main>
-        <Footer />
-      </>
-    );
-  }
-
-  if (!user) {
-    return (
-      <>
-        <Header />
-        <main className="main-content">
-          <div className="reset-password-container">
-            <div className="glass-card reset-card">
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: "3rem", marginBottom: "var(--space-md)" }}>⚠️</div>
-                <h2>Invalid or Expired Link</h2>
-                <p style={{ color: "var(--text-secondary)", margin: "var(--space-md) 0 var(--space-xl)" }}>
-                  This password reset link is invalid or has expired. Please request a new one.
-                </p>
-                <button
-                  className="upload-btn upload-btn-primary"
-                  onClick={() => router.push("/")}
-                >
-                  Back to Home
-                </button>
-              </div>
-            </div>
-          </div>
-        </main>
-        <Footer />
-      </>
-    );
-  }
-
-  if (success) {
-    return (
-      <>
-        <Header />
-        <main className="main-content">
-          <div className="reset-password-container">
-            <div className="glass-card reset-card">
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: "3rem", marginBottom: "var(--space-md)" }}>✅</div>
-                <h2>Password Updated!</h2>
-                <p style={{ color: "var(--text-secondary)", margin: "var(--space-md) 0 var(--space-xl)" }}>
-                  Your password has been successfully updated. You can now use your new password to sign in.
-                </p>
-                <button
-                  className="upload-btn upload-btn-primary"
-                  onClick={() => router.push("/")}
-                >
-                  Go to Home
-                </button>
-              </div>
-            </div>
-          </div>
-        </main>
-        <Footer />
-      </>
-    );
-  }
+  if (!ready || loading) return <PageLoading label="Checking your reset link…" />;
 
   return (
-    <>
-      <Header />
-      <main className="main-content">
-        <div className="reset-password-container">
-          <div className="glass-card reset-card">
-            <h2 style={{ textAlign: "center", marginBottom: "var(--space-xs)" }}>
-              🔒 Set New Password
-            </h2>
-            <p style={{ textAlign: "center", color: "var(--text-muted)", fontSize: "0.88rem", marginBottom: "var(--space-xl)" }}>
-              Enter your new password below.
-            </p>
-
-            {error && (
-              <div className="auth-error" style={{ marginBottom: "var(--space-md)" }}>
-                ❌ {error}
-              </div>
-            )}
-
-            <form onSubmit={handleSubmit} className="auth-form">
-              <div className="auth-field">
-                <label htmlFor="new-password">New Password</label>
-                <input
-                  id="new-password"
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="••••••••"
-                  autoComplete="new-password"
-                  disabled={loading}
-                />
-              </div>
-
-              <div className="auth-field">
-                <label htmlFor="confirm-new-password">Confirm New Password</label>
-                <input
-                  id="confirm-new-password"
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="••••••••"
-                  autoComplete="new-password"
-                  disabled={loading}
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="upload-btn upload-btn-primary auth-submit"
-                disabled={loading}
-              >
-                {loading ? "Updating..." : "Update Password"}
-              </button>
-            </form>
-          </div>
-        </div>
-      </main>
-      <Footer />
-    </>
+    <div className="mx-auto max-w-md px-4 py-20">
+      {!user ? (
+        <EmptyState
+          icon={<TriangleAlert className="size-8" aria-hidden />}
+          title="This link is invalid or has expired"
+          action={<ButtonLink href="/">Back to AlgaeAI</ButtonLink>}
+        >
+          Request a new reset link from the sign-in dialog.
+        </EmptyState>
+      ) : done ? (
+        <EmptyState
+          icon={<Check className="size-8 text-brand" aria-hidden />}
+          title="Password updated"
+          action={<ButtonLink href="/">Continue</ButtonLink>}
+        >
+          You&apos;re signed in with your new password.
+        </EmptyState>
+      ) : (
+        <Panel className="p-7">
+          <KeyRound className="size-7 text-brand" aria-hidden />
+          <h1 className="mt-4 text-2xl font-semibold">Choose a new password</h1>
+          <p className="mt-1 text-sm text-muted">For {user.email}</p>
+          <form onSubmit={submit} className="mt-6 space-y-4" noValidate>
+            <Field label="New password" htmlFor="new-password">
+              <Input id="new-password" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            </Field>
+            <Field label="Confirm password" htmlFor="confirm-password">
+              <Input id="confirm-password" type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+            </Field>
+            {error && <Notice tone="error">{error}</Notice>}
+            <Button type="submit" disabled={busy} className="w-full">
+              {busy ? "Saving…" : "Update password"}
+            </Button>
+          </form>
+        </Panel>
+      )}
+    </div>
   );
 }

@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy — AlgaeAI",
+  title: "Privacy Policy",
   description:
     "Learn how AlgaeAI collects, uses, and protects your personal information.",
 };
@@ -11,8 +9,7 @@ export const metadata: Metadata = {
 export default function PrivacyPage() {
   return (
     <>
-      <Header />
-      <main className="main-content legal-page">
+      <article className="legal-page">
         <h1>Privacy Policy</h1>
         <p className="legal-effective">Effective Date: April 26, 2026</p>
 
@@ -26,15 +23,19 @@ export default function PrivacyPage() {
           </p>
           <h3>1.2 Uploaded Images</h3>
           <p>
-            Images you upload for identification are processed by our AI model.
-            For registered users, images may be stored in secure cloud storage
-            to provide identification history features.
+            Images you upload for identification are processed by our AI model
+            and stored in private cloud storage together with the result, so
+            the result page can be reopened. Stored images are only shown
+            through short-lived links: to you, to anyone you share a result
+            with, and to reviewers. Results from guests are viewable by anyone
+            who has the result link. Signed-in users can delete their results
+            at any time from their workspace.
           </p>
           <h3>1.3 Usage Data</h3>
           <p>
-            We collect anonymous usage statistics such as identification counts
-            and feature usage to improve the Service. Guest users&apos;
-            identification counts are stored locally in the browser.
+            To enforce daily identification limits, our server counts recent
+            requests per account, or per IP address for guests. These counts are
+            kept in memory and are not stored permanently.
           </p>
         </section>
 
@@ -43,6 +44,11 @@ export default function PrivacyPage() {
           <ul>
             <li>To provide and maintain the identification Service.</li>
             <li>To store your identification history (registered users).</li>
+            <li>
+              To publish observations you submit to the open species database,
+              after a reviewer approves them. Approved images, your display
+              name and the location you provided become publicly visible.
+            </li>
             <li>To improve our AI model accuracy and Service quality.</li>
             <li>To communicate important Service updates.</li>
           </ul>
@@ -81,9 +87,8 @@ export default function PrivacyPage() {
         <section className="legal-section">
           <h2>6. Cookies &amp; Local Storage</h2>
           <p>
-            We use browser local storage to track anonymous usage limits. We do
-            not use third-party tracking cookies. Session storage is used
-            temporarily to pass identification results between pages.
+            We store your sign-in session in browser storage. We do not use
+            third-party tracking cookies.
           </p>
         </section>
 
@@ -123,8 +128,7 @@ export default function PrivacyPage() {
             <a href="mailto:privacy@algaeai.app">privacy@algaeai.app</a>.
           </p>
         </section>
-      </main>
-      <Footer />
+      </article>
     </>
   );
 }

@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
 
 export const metadata: Metadata = {
-  title: "Copyright Notice — AlgaeAI",
+  title: "Copyright Notice",
   description:
     "Copyright and intellectual property information for AlgaeAI.",
 };
@@ -13,8 +11,7 @@ export default function CopyrightPage() {
 
   return (
     <>
-      <Header />
-      <main className="main-content legal-page">
+      <article className="legal-page">
         <h1>Copyright Notice</h1>
         <p className="legal-effective">Effective Date: April 26, 2026</p>
 
@@ -108,8 +105,7 @@ export default function CopyrightPage() {
             <a href="mailto:copyright@algaeai.app">copyright@algaeai.app</a>.
           </p>
         </section>
-      </main>
-      <Footer />
+      </article>
     </>
   );
 }
