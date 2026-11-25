@@ -1,224 +1,133 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { Button } from "@/components/ui/Button";
+import { Dialog } from "@/components/ui/Dialog";
+import { Field, Input } from "@/components/ui/Form";
+import { Notice } from "@/components/ui/Primitives";
 
-interface AuthModalProps {
-    isOpen: boolean;
-    onClose: () => void;
-    message?: string;
-}
+type Mode = "signin" | "signup" | "forgot";
 
-export default function AuthModal({ isOpen, onClose, message }: AuthModalProps) {
-    const { signIn, signUp, resetPassword } = useAuth();
-    const [mode, setMode] = useState<"signin" | "signup" | "forgot">("signup");
-    const [email, setEmail] = useState("");
-    const [password, setPassword] = useState("");
-    const [confirmPassword, setConfirmPassword] = useState("");
-    const [error, setError] = useState<string | null>(null);
-    const [success, setSuccess] = useState<string | null>(null);
-    const [loading, setLoading] = useState(false);
+const titles: Record<Mode, string> = {
+  signin: "Sign in",
+  signup: "Create an account",
+  forgot: "Reset your password",
+};
 
-    if (!isOpen) return null;
+/** The one sign-in dialog, opened from anywhere with useAuth().requestSignIn(). */
+export default function AuthModal() {
+  const { authPrompt, closeSignIn, signIn, signUp, resetPassword } = useAuth();
+  const [mode, setMode] = useState<Mode>("signin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setError(null);
-        setSuccess(null);
+  const switchTo = (next: Mode) => {
+    setMode(next);
+    setError(null);
+    setSuccess(null);
+    setPassword("");
+    setConfirm("");
+  };
 
-        if (mode === "forgot") {
-            if (!email) {
-                setError("Please enter your email address.");
-                return;
-            }
-            setLoading(true);
-            const { error } = await resetPassword(email);
-            if (error) {
-                setError(error);
-            } else {
-                setSuccess("Password reset link sent! Please check your email inbox (and spam folder).");
-            }
-            setLoading(false);
-            return;
-        }
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccess(null);
+    if (!email) return setError("Enter your email address.");
 
-        if (!email || !password) {
-            setError("Please fill in all fields.");
-            return;
-        }
+    if (mode === "forgot") {
+      setBusy(true);
+      const { error } = await resetPassword(email);
+      setBusy(false);
+      return error ? setError(error) : setSuccess("Check your inbox (and spam folder) for a reset link.");
+    }
+    if (password.length < 6) return setError("Passwords need at least 6 characters.");
+    if (mode === "signup" && password !== confirm) return setError("The passwords don't match.");
 
-        if (mode === "signup" && password !== confirmPassword) {
-            setError("Passwords do not match.");
-            return;
-        }
+    setBusy(true);
+    if (mode === "signup") {
+      const { error } = await signUp(email, password);
+      if (error) setError(error);
+      else {
+        switchTo("signin");
+        setSuccess("Account created. Confirm your email from the link we sent, then sign in.");
+      }
+    } else {
+      const { error } = await signIn(email, password);
+      if (error) setError(error);
+      else closeSignIn();
+    }
+    setBusy(false);
+  };
 
-        if (password.length < 6) {
-            setError("Password must be at least 6 characters.");
-            return;
-        }
+  return (
+    <Dialog open={authPrompt.open} onClose={closeSignIn} title={titles[mode]}>
+      {authPrompt.message && mode !== "forgot" && <p className="-mt-2 mb-5 text-sm text-muted">{authPrompt.message}</p>}
 
-        setLoading(true);
+      <form onSubmit={submit} className="flex flex-col gap-4" noValidate>
+        <Field label="Email" htmlFor="auth-email">
+          <Input
+            id="auth-email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@university.edu"
+          />
+        </Field>
+        {mode !== "forgot" && (
+          <Field label="Password" htmlFor="auth-password">
+            <Input
+              id="auth-password"
+              type="password"
+              autoComplete={mode === "signup" ? "new-password" : "current-password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </Field>
+        )}
+        {mode === "signup" && (
+          <Field label="Confirm password" htmlFor="auth-confirm">
+            <Input
+              id="auth-confirm"
+              type="password"
+              autoComplete="new-password"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+            />
+          </Field>
+        )}
 
-        if (mode === "signup") {
-            const { error } = await signUp(email, password);
-            if (error) {
-                setError(error);
-            } else {
-                setSuccess("Account created! Please check your email to verify, then sign in.");
-                setMode("signin");
-                setPassword("");
-                setConfirmPassword("");
-            }
-        } else {
-            const { error } = await signIn(email, password);
-            if (error) {
-                setError(error);
-            } else {
-                onClose();
-            }
-        }
+        {error && <Notice tone="error">{error}</Notice>}
+        {success && <Notice tone="success">{success}</Notice>}
 
-        setLoading(false);
-    };
+        <Button type="submit" disabled={busy} className="mt-1 w-full">
+          {busy ? "Please wait…" : mode === "signin" ? "Sign in" : mode === "signup" ? "Create account" : "Send reset link"}
+        </Button>
+      </form>
 
-    const switchMode = () => {
-        setMode(mode === "signin" ? "signup" : "signin");
-        setError(null);
-        setSuccess(null);
-        setPassword("");
-        setConfirmPassword("");
-    };
-
-    const goToForgot = () => {
-        setMode("forgot");
-        setError(null);
-        setSuccess(null);
-        setPassword("");
-        setConfirmPassword("");
-    };
-
-    const backToSignIn = () => {
-        setMode("signin");
-        setError(null);
-        setSuccess(null);
-    };
-
-    const getTitle = () => {
-        if (mode === "forgot") return "🔒 Reset Password";
-        if (mode === "signin") return "🔑 Sign In";
-        return "📝 Create Account";
-    };
-
-    return (
-        <div className="camera-modal-overlay" onClick={onClose}>
-            <div className="auth-modal" onClick={(e) => e.stopPropagation()}>
-                <div className="camera-modal-header">
-                    <h3>{getTitle()}</h3>
-                    <button className="camera-close-btn" onClick={onClose}>✕</button>
-                </div>
-
-                <div className="auth-modal-body">
-                    {message && (
-                        <div className="auth-message">
-                            {message}
-                        </div>
-                    )}
-
-                    {success && (
-                        <div className="auth-success">
-                            ✅ {success}
-                        </div>
-                    )}
-
-                    {error && (
-                        <div className="auth-error">
-                            ❌ {error}
-                        </div>
-                    )}
-
-                    <form onSubmit={handleSubmit} className="auth-form">
-                        <div className="auth-field">
-                            <label htmlFor="auth-email">Email</label>
-                            <input
-                                id="auth-email"
-                                type="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                placeholder="you@example.com"
-                                autoComplete="email"
-                                disabled={loading}
-                            />
-                        </div>
-
-                        {mode !== "forgot" && (
-                            <div className="auth-field">
-                                <label htmlFor="auth-password">Password</label>
-                                <input
-                                    id="auth-password"
-                                    type="password"
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    placeholder="••••••••"
-                                    autoComplete={mode === "signin" ? "current-password" : "new-password"}
-                                    disabled={loading}
-                                />
-                            </div>
-                        )}
-
-                        {mode === "signup" && (
-                            <div className="auth-field">
-                                <label htmlFor="auth-confirm-password">Confirm Password</label>
-                                <input
-                                    id="auth-confirm-password"
-                                    type="password"
-                                    value={confirmPassword}
-                                    onChange={(e) => setConfirmPassword(e.target.value)}
-                                    placeholder="••••••••"
-                                    autoComplete="new-password"
-                                    disabled={loading}
-                                />
-                            </div>
-                        )}
-
-                        <button
-                            type="submit"
-                            className="upload-btn upload-btn-primary auth-submit"
-                            disabled={loading}
-                        >
-                            {loading
-                                ? "Please wait..."
-                                : mode === "forgot"
-                                    ? "Send Reset Link"
-                                    : mode === "signin"
-                                        ? "Sign In"
-                                        : "Create Account"
-                            }
-                        </button>
-                    </form>
-
-                    {mode === "signin" && (
-                        <div className="auth-forgot">
-                            <button onClick={goToForgot} id="forgot-password-btn">
-                                Forgot your password?
-                            </button>
-                        </div>
-                    )}
-
-                    {mode === "forgot" ? (
-                        <div className="auth-switch">
-                            <p>Remember your password? <button onClick={backToSignIn}>Sign in</button></p>
-                        </div>
-                    ) : (
-                        <div className="auth-switch">
-                            {mode === "signin" ? (
-                                <p>Don&apos;t have an account? <button onClick={switchMode}>Sign up</button></p>
-                            ) : (
-                                <p>Already have an account? <button onClick={switchMode}>Sign in</button></p>
-                            )}
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-4 text-sm">
+        {mode === "signin" && (
+          <>
+            <button type="button" className="text-brand hover:underline" onClick={() => switchTo("signup")}>
+              Create an account
+            </button>
+            <button type="button" className="text-muted hover:text-text" onClick={() => switchTo("forgot")}>
+              Forgot password?
+            </button>
+          </>
+        )}
+        {mode !== "signin" && (
+          <button type="button" className="text-brand hover:underline" onClick={() => switchTo("signin")}>
+            Already have an account? Sign in
+          </button>
+        )}
+      </div>
+    </Dialog>
+  );
 }
