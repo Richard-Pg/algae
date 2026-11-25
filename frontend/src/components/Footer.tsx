@@ -1,52 +1,38 @@
 import Link from "next/link";
+import { LogoMark } from "@/components/Logo";
 
 export default function Footer() {
-  const currentYear = new Date().getFullYear();
-
   return (
-    <footer className="site-footer" id="site-footer">
-      <div className="footer-inner">
-        {/* Brand */}
-        <div className="footer-brand">
-          <Link href="/" className="footer-logo">
-            <span className="logo-icon">🧬</span>
-            AlgaeAI
+    <footer className="border-t border-line bg-surface">
+      <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-8 md:grid-cols-[2fr_1fr_1fr]">
+        <div>
+          <Link href="/" className="flex items-center gap-2 text-text">
+            <LogoMark className="size-5 text-brand" />
+            <span className="font-semibold">AlgaeAI</span>
           </Link>
-          <p className="footer-tagline">
-            AI-powered algae &amp; diatom identification for researchers,
-            educators, and environmental scientists.
+          <p className="mt-3 max-w-sm text-sm text-muted">
+            An open, expert-reviewed database of algae and diatoms, with AI-assisted identification as a starting
+            point for your own observation.
           </p>
         </div>
-
-        {/* Links */}
-        <nav className="footer-links" aria-label="Footer navigation">
-          <div className="footer-link-group">
-            <h4 className="footer-link-heading">Product</h4>
-            <Link href="/" className="footer-link">Identify</Link>
-            <Link href="/contribute" className="footer-link">Contribute</Link>
-            <Link href="/history" className="footer-link">History</Link>
-          </div>
-          <div className="footer-link-group">
-            <h4 className="footer-link-heading">Legal</h4>
-            <Link href="/terms" className="footer-link">Terms of Service</Link>
-            <Link href="/privacy" className="footer-link">Privacy Policy</Link>
-            <Link href="/copyright" className="footer-link">Copyright</Link>
-          </div>
+        <nav aria-label="Product" className="flex flex-col gap-2 text-sm">
+          <span className="label mb-1">Explore</span>
+          <Link href="/" className="text-muted hover:text-text">Identify</Link>
+          <Link href="/species" className="text-muted hover:text-text">Species library</Link>
+          <Link href="/contribute" className="text-muted hover:text-text">Contribute</Link>
+        </nav>
+        <nav aria-label="Legal" className="flex flex-col gap-2 text-sm">
+          <span className="label mb-1">Legal</span>
+          <Link href="/terms" className="text-muted hover:text-text">Terms of Service</Link>
+          <Link href="/privacy" className="text-muted hover:text-text">Privacy Policy</Link>
+          <Link href="/copyright" className="text-muted hover:text-text">Copyright</Link>
         </nav>
       </div>
-
-      {/* Bottom bar */}
-      <div className="footer-bottom">
-        <p className="footer-copyright">
-          &copy; {currentYear} AlgaeAI. All rights reserved.
+      <div className="border-t border-line">
+        <p className="mx-auto max-w-7xl px-4 py-5 text-xs text-muted sm:px-8">
+          © {new Date().getFullYear()} AlgaeAI. AI identifications are preliminary and should be confirmed by a
+          trained observer.
         </p>
-        <div className="footer-bottom-links">
-          <Link href="/terms">Terms</Link>
-          <span className="footer-dot">·</span>
-          <Link href="/privacy">Privacy</Link>
-          <span className="footer-dot">·</span>
-          <Link href="/copyright">Copyright</Link>
-        </div>
       </div>
     </footer>
   );

@@ -1,143 +1,158 @@
 """
-Algae Species Database & Dynamic Knowledge Engine
-Fetches curated data from Supabase, or falls back to GBIF API for unknown species.
+Algae species knowledge: the curated Supabase table first, GBIF as fallback.
+
+GBIF calls are async and cached. Matching prefers kingdoms that contain algae,
+because several genus names are shared with animals (e.g. Microcystis is
+also a land-snail genus).
 """
 
-from typing import Optional, List, Dict, Any
-import os
+import logging
+import time
+from typing import Any, Dict, List, Optional
+
 import httpx
-from supabase import create_client, Client
-from dotenv import load_dotenv
+from starlette.concurrency import run_in_threadpool
 
-# Load environment variables explicitly
-load_dotenv()
+from app.db import get_supabase  # re-exported for older scripts
 
-# Initialize Supabase client
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
-SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_ANON_KEY", "")
+log = logging.getLogger(__name__)
 
-# Cache the client
-_supabase: Optional[Client] = None
+ALGAL_KINGDOMS = {"bacteria", "chromista", "plantae", "protozoa"}
+GBIF_API = "https://api.gbif.org/v1"
+_CACHE_TTL = 24 * 60 * 60
+_gbif_cache: Dict[str, tuple[float, Optional[dict]]] = {}
 
-def get_supabase() -> Client:
-    global _supabase
-    if not _supabase:
-        if not SUPABASE_URL or not SUPABASE_KEY:
-            raise ValueError(f"Missing Supabase credentials. URL: {'Set' if SUPABASE_URL else 'Missing'}, KEY: {'Set' if SUPABASE_KEY else 'Missing'}")
-        _supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-    return _supabase
+__all__ = [
+    "get_supabase",
+    "get_curated_species",
+    "get_species_info",
+    "match_gbif",
+    "list_curated_species",
+]
+
 
 def get_curated_species(genus_name: str) -> Optional[Dict[str, Any]]:
-    """Look up curated species information from Supabase by genus name."""
-    try:
-        supabase = get_supabase()
-        # Case-insensitive search using ilike
-        response = supabase.table("algae_species").select("*").ilike("genus", genus_name).execute()
-        
-        if response.data and len(response.data) > 0:
-            return response.data[0]
+    """Case-insensitive exact lookup in the curated table."""
+    if not genus_name:
         return None
-    except Exception as e:
-        print(f"Error querying Supabase for {genus_name}: {str(e)}")
+    try:
+        response = (
+            get_supabase()
+            .table("algae_species")
+            .select("*")
+            .ilike("genus", genus_name.strip())
+            .limit(1)
+            .execute()
+        )
+        return response.data[0] if response.data else None
+    except Exception as exc:
+        log.warning("Curated lookup failed for %s: %s", genus_name, exc)
         return None
 
-def fetch_gbif_taxonomy(genus_name: str, generated_details: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
-    """
-    Fallback method: Query the Global Biodiversity Information Facility (GBIF) API
-    to get real-time taxonomy for an unknown species.
-    If generated_details (from Gemini) are provided, merge them in as preliminary estimates.
-    """
-    try:
-        # We use httpx for synchronous fallback, or we could use async if we refactored
-        with httpx.Client(timeout=5.0) as client:
-            response = client.get(f"https://api.gbif.org/v1/species/match?name={genus_name}")
-            
-            if response.status_code == 200:
-                data = response.json()
-                
-                # Check if confident match (usually 90+)
-                if data.get("matchType") in ["EXACT", "FUZZY", "HIGHERRANK"] and data.get("confidence", 0) > 80:
-                    
-                    details = generated_details or {}
-                    
-                    return {
-                        "genus": data.get("genus", genus_name),
-                        "common_species": [],
-                        "is_fallback": True, # Flag indicating this is not from our curated DB
-                        "taxonomy": {
-                            "kingdom": data.get("kingdom", "Unknown"),
-                            "phylum": data.get("phylum", "Unknown"),
-                            "class": data.get("class", "Unknown"),
-                            "order": data.get("order", "Unknown"),
-                            "family": data.get("family", "Unknown"),
-                            "genus": data.get("genus", genus_name)
-                        },
-                        "toxin": {
-                            "produces_toxin": details.get("toxin", {}).get("produces_toxin", False),
-                            "toxin_type": details.get("toxin", {}).get("toxin_type", "Unknown"),
-                            "risk_level": details.get("toxin", {}).get("risk_level", "Unknown"),
-                            "health_effects": details.get("toxin", {}).get("health_effects", "This is an AI-generated estimation based on general morphological characteristics."),
-                            "is_ai_generated": True
-                        },
-                        "ecology": {
-                            **details.get("ecology", {}),
-                            "is_ai_generated": True
-                        },
-                        "description": details.get("description", "Scientific classification dynamically retrieved from GBIF. Ecological details estimated by AI.") + "\n\n(Note: Ecology and Toxicity are AI-generated preliminary estimates. Verify with authoritative sources.)",
-                        "morphology": details.get("morphology", "Unknown"),
-                        "reference_images": []
-                    }
-        return None
-    except Exception as e:
-        print(f"Error querying GBIF for {genus_name}: {str(e)}")
-        return None
 
-def get_species_info(genus_name: str, generated_details: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
-    """
-    Primary lookup function.
-    1. Try to get rich, curated data from Supabase.
-    2. If not found, dynamically fetch taxonomy from GBIF and merge with AI predictions.
-    """
-    # 1. Try Curated Database
-    curated_data = get_curated_species(genus_name)
-    if curated_data:
-        return curated_data
-        
-    print(f"Genus '{genus_name}' not in curated DB. Falling back to GBIF API...")
-    
-    # 2. Try GBIF API Fallback
-    gbif_data = fetch_gbif_taxonomy(genus_name, generated_details)
-    if gbif_data:
-        print(f"GBIF Fallback successful for {genus_name}.")
-        return gbif_data
-        
+def list_curated_species() -> List[Dict[str, Any]]:
+    response = get_supabase().table("algae_species").select("*").order("genus").execute()
+    return response.data or []
+
+
+def _pick_algal_match(data: dict) -> Optional[dict]:
+    candidates = []
+    if data.get("usageKey"):
+        candidates.append(data)
+    candidates.extend(data.get("alternatives") or [])
+    usable = [
+        c for c in candidates
+        if c.get("usageKey") and c.get("matchType") != "NONE" and c.get("confidence", 0) >= 80
+    ]
+    for candidate in usable:
+        if str(candidate.get("kingdom", "")).lower() in ALGAL_KINGDOMS:
+            return candidate
     return None
 
-def get_all_genera() -> List[str]:
-    """Return list of all curated genera in the database."""
-    try:
-        supabase = get_supabase()
-        response = supabase.table("algae_species").select("genus").execute()
-        if response.data:
-            return [item["genus"] for item in response.data]
-        return []
-    except Exception as e:
-        print(f"Error fetching genera: {str(e)}")
-        return []
 
-def search_species(query: str) -> List[dict]:
-    """Search for curated species matching a query string."""
+async def match_gbif(genus_name: str) -> Optional[dict]:
+    """Match a genus against the GBIF backbone, preferring algal kingdoms.
+
+    Returns a dict with taxonomy and the GBIF key, or None. Cached for a day.
+    """
+    key = (genus_name or "").strip().lower()
+    if not key or key == "unknown":
+        return None
+    cached = _gbif_cache.get(key)
+    if cached and time.time() - cached[0] < _CACHE_TTL:
+        return cached[1]
+
+    result = None
     try:
-        supabase = get_supabase()
-        # Search genus or description for the query
-        response = supabase.table("algae_species") \
-            .select("*") \
-            .or_(f"genus.ilike.%{query}%,description.ilike.%{query}%") \
-            .execute()
-            
-        if response.data:
-            return response.data
-        return []
-    except Exception as e:
-        print(f"Error searching species: {str(e)}")
-        return []
+        async with httpx.AsyncClient(timeout=6.0) as client:
+            response = await client.get(
+                f"{GBIF_API}/species/match",
+                params={"name": genus_name, "rank": "GENUS", "verbose": "true"},
+            )
+        if response.status_code == 200:
+            match = _pick_algal_match(response.json())
+            if match:
+                result = {
+                    "gbif_key": match.get("genusKey") or match.get("usageKey"),
+                    "scientific_name": match.get("scientificName"),
+                    "taxonomy": {
+                        "kingdom": match.get("kingdom"),
+                        "phylum": match.get("phylum"),
+                        "class": match.get("class"),
+                        "order": match.get("order"),
+                        "family": match.get("family"),
+                        "genus": match.get("genus") or genus_name,
+                    },
+                }
+    except Exception as exc:
+        log.warning("GBIF match failed for %s: %s", genus_name, exc)
+        return None  # do not cache transient failures
+
+    _gbif_cache[key] = (time.time(), result)
+    return result
+
+
+def _fallback_from_gbif(genus_name: str, gbif: dict, generated: Dict[str, Any]) -> Dict[str, Any]:
+    details = generated or {}
+    toxin = details.get("toxin") or {}
+    return {
+        "genus": gbif["taxonomy"].get("genus") or genus_name,
+        "common_species": [],
+        "is_fallback": True,
+        "source": "gbif+ai",
+        "taxonomy": {k: v for k, v in gbif["taxonomy"].items() if v},
+        "toxin": {
+            "produces_toxin": toxin.get("produces_toxin", False),
+            "toxin_type": toxin.get("toxin_type") or "Unknown",
+            "risk_level": toxin.get("risk_level") or "Unknown",
+            "health_effects": toxin.get("health_effects") or "",
+            "is_ai_generated": True,
+        },
+        "ecology": {**(details.get("ecology") or {}), "is_ai_generated": True},
+        "description": details.get("description") or "",
+        "morphology": details.get("morphology") or "",
+        "reference_images": [],
+        "references": [],
+    }
+
+
+async def get_species_info(
+    genus_name: str, generated_details: Optional[Dict[str, Any]] = None
+) -> Optional[Dict[str, Any]]:
+    """Curated record (with its GBIF key) or a GBIF + AI fallback record."""
+    curated = await run_in_threadpool(get_curated_species, genus_name)
+    gbif = await match_gbif(genus_name)
+    if curated:
+        info = dict(curated)
+        info["source"] = "curated"
+        info["is_fallback"] = False
+        if gbif:
+            info["gbif_key"] = gbif["gbif_key"]
+            info["gbif_name"] = gbif["scientific_name"]
+        return info
+    if gbif:
+        info = _fallback_from_gbif(genus_name, gbif, generated_details or {})
+        info["gbif_key"] = gbif["gbif_key"]
+        info["gbif_name"] = gbif["scientific_name"]
+        return info
+    return None

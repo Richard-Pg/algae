@@ -110,24 +110,64 @@ If the image does not appear to contain algae or is unrecognizable:
 """
 
 
-async def identify_algae(image_bytes: bytes, filename: str = "image.jpg") -> dict:
+def _as_fraction(value) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if number > 1:  # the model occasionally answers in percent
+        number = number / 100
+    return max(0.0, min(1.0, number))
+
+
+def normalize_result(result: dict) -> dict:
+    """Make the model output safe for the UI: numeric confidences, lists, sorted alternatives."""
+    if not isinstance(result, dict):
+        return {"identified": False, "error_message": "Unexpected AI response."}
+    if result.get("identified"):
+        primary = result.get("primary_identification") or {}
+        primary["confidence"] = _as_fraction(primary.get("confidence"))
+        result["primary_identification"] = primary
+        alternatives = [a for a in (result.get("alternative_identifications") or []) if isinstance(a, dict)]
+        for alt in alternatives:
+            alt["confidence"] = _as_fraction(alt.get("confidence"))
+        alternatives.sort(key=lambda a: a["confidence"], reverse=True)
+        result["alternative_identifications"] = alternatives
+        trivia = result.get("trivia") or {}
+        if not isinstance(trivia.get("references"), list):
+            trivia["references"] = []
+        result["trivia"] = trivia
+    return result
+
+
+def _database_view(db_info: dict) -> dict:
+    keys = [
+        "taxonomy", "toxin", "ecology", "description", "morphology",
+        "common_species", "reference_images", "references",
+        "source", "is_fallback", "gbif_key", "gbif_name",
+    ]
+    return {key: db_info.get(key) for key in keys if key in db_info}
+
+
+async def identify_algae(image_bytes: bytes, filename: str = "image.jpg", normalized: bool = False) -> dict:
     """
-    Identify algae from image bytes using Gemini Vision API.
+    Identify algae from image bytes using the Gemini vision model.
     Returns structured identification results enriched with database info.
+    Pass normalized=True when image_bytes is already the PNG from app.images.
     """
-    # Normalize any Pillow-supported input to lossless PNG for a consistent API payload.
-    with Image.open(io.BytesIO(image_bytes)) as source_image:
-        if source_image.mode not in ("RGB", "L"):
-            source_image = source_image.convert("RGB")
-        normalized_image = io.BytesIO()
-        source_image.save(normalized_image, format="PNG")
+    if normalized:
+        png_bytes = image_bytes
+    else:
+        with Image.open(io.BytesIO(image_bytes)) as source_image:
+            if source_image.mode not in ("RGB", "L"):
+                source_image = source_image.convert("RGB")
+            buffer = io.BytesIO()
+            source_image.save(buffer, format="PNG")
+            png_bytes = buffer.getvalue()
 
-    image_part = types.Part.from_bytes(
-        data=normalized_image.getvalue(),
-        mime_type="image/png",
-    )
+    image_part = types.Part.from_bytes(data=png_bytes, mime_type="image/png")
 
-    # Gemini 3.6 ignores deprecated sampling controls, so only supported options are set.
+    # Only supported options are set; sampling controls are ignored by this model family.
     model_name = get_gemini_model_name()
     async with create_gemini_client().aio as client:
         response = await client.models.generate_content(
@@ -139,48 +179,30 @@ async def identify_algae(image_bytes: bytes, filename: str = "image.jpg") -> dic
             ),
         )
 
-    # Parse response
+    text = (response.text or "").strip()
     try:
-        response_text = response.text.strip()
-        result = json.loads(response_text)
-    except (json.JSONDecodeError, ValueError) as e:
-        # Fallback for very rare cases where it might still include fences despite mime_type
-        cleaned_text = response.text.strip()
-        if cleaned_text.startswith("```json"):
-            cleaned_text = cleaned_text[7:-3].strip()
-        elif cleaned_text.startswith("```"):
-            cleaned_text = cleaned_text[3:-3].strip()
-        
+        result = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        cleaned = text
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
         try:
-            result = json.loads(cleaned_text)
-        except (json.JSONDecodeError, ValueError) as e2:
+            result = json.loads(cleaned)
+        except (json.JSONDecodeError, ValueError) as exc:
             result = {
                 "identified": False,
-                "error_message": f"Failed to parse AI response: {str(e2)}",
-                "raw_response": response.text[:10000],  # Increased limit for better debugging
+                "error_message": f"The AI response could not be read ({exc}). Please try again.",
                 "image_quality": "unknown",
                 "image_type": "unknown",
             }
 
-    # Enrich with database info if identified
+    result = normalize_result(result)
+
     if result.get("identified"):
-        genus = result.get("primary_identification", {}).get("genus", "")
-        generated_details = result.get("generated_details", {})
-        db_info = get_species_info(genus, generated_details)
-        if db_info:
-            result["database_info"] = {
-                "taxonomy": db_info["taxonomy"],
-                "toxin": db_info["toxin"],
-                "ecology": db_info["ecology"],
-                "description": db_info["description"],
-                "morphology": db_info["morphology"],
-                "common_species": db_info["common_species"],
-                "reference_images": db_info["reference_images"],
-            }
-        else:
-            result["database_info"] = None
+        genus = (result.get("primary_identification") or {}).get("genus", "")
+        db_info = await get_species_info(genus, result.get("generated_details") or {})
+        result["database_info"] = _database_view(db_info) if db_info else None
 
     result["ai_model"] = model_name
     result["ai_provider"] = "google_gemini"
-
     return result

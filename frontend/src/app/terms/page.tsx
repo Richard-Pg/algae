@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
 
 export const metadata: Metadata = {
-  title: "Terms of Service — AlgaeAI",
+  title: "Terms of Service",
   description:
     "Read the Terms of Service for AlgaeAI, the AI-powered algae and diatom identification platform.",
 };
@@ -11,8 +9,7 @@ export const metadata: Metadata = {
 export default function TermsPage() {
   return (
     <>
-      <Header />
-      <main className="main-content legal-page">
+      <article className="legal-page">
         <h1>Terms of Service</h1>
         <p className="legal-effective">Effective Date: April 26, 2026</p>
 
@@ -113,8 +110,7 @@ export default function TermsPage() {
             <a href="mailto:support@algaeai.app">support@algaeai.app</a>.
           </p>
         </section>
-      </main>
-      <Footer />
+      </article>
     </>
   );
 }
