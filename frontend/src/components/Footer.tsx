@@ -30,8 +30,7 @@ export default function Footer() {
       </div>
       <div className="border-t border-line">
         <p className="mx-auto max-w-7xl px-4 py-5 text-xs text-muted sm:px-8">
-          © {new Date().getFullYear()} AlgaeAI. AI identifications are preliminary and should be confirmed by a
-          trained observer.
+          © {new Date().getFullYear()} AlgaeAI.
         </p>
       </div>
     </footer>
