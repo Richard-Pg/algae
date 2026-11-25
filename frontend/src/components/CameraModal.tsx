@@ -1,182 +1,141 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Camera, RotateCcw } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+import { Dialog } from "@/components/ui/Dialog";
+import { Notice } from "@/components/ui/Primitives";
 
-interface CameraModalProps {
-    isOpen: boolean;
-    onClose: () => void;
-    onCapture: (file: File) => void;
-}
+/**
+ * Live camera capture for desktop webcams and USB microscope cameras.
+ * On phones the native camera is used instead (see ImagePicker).
+ */
+export default function CameraModal({
+  open,
+  onClose,
+  onCapture,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCapture: (file: File) => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [deviceId, setDeviceId] = useState<string>("");
 
-export default function CameraModal({ isOpen, onClose, onCapture }: CameraModalProps) {
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const streamRef = useRef<MediaStream | null>(null);
-    const [hasCamera, setHasCamera] = useState(true);
-    const [isReady, setIsReady] = useState(false);
-    const [capturedImage, setCapturedImage] = useState<string | null>(null);
-    const [error, setError] = useState<string | null>(null);
+  const stop = useCallback(() => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    setReady(false);
+  }, []);
 
-    const startCamera = useCallback(async () => {
-        try {
-            setError(null);
-            setIsReady(false);
-            setCapturedImage(null);
-
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    facingMode: "environment",
-                    width: { ideal: 1920 },
-                    height: { ideal: 1080 },
-                },
-            });
-
-            streamRef.current = stream;
-
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream;
-                videoRef.current.onloadedmetadata = () => {
-                    videoRef.current?.play();
-                    setIsReady(true);
-                };
-            }
-        } catch (err) {
-            console.error("Camera access failed:", err);
-            if (err instanceof DOMException && err.name === "NotAllowedError") {
-                setError("Camera permission denied. Please allow camera access in your browser settings.");
-            } else if (err instanceof DOMException && err.name === "NotFoundError") {
-                setHasCamera(false);
-                setError("No camera detected on this device.");
-            } else {
-                setError("Failed to access camera. Please try again.");
-            }
+  const start = useCallback(
+    async (id?: string) => {
+      stop();
+      setError(null);
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: id
+            ? { deviceId: { exact: id }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+            : { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
+        });
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play().catch(() => undefined);
+          setReady(true);
         }
-    }, []);
-
-    const stopCamera = useCallback(() => {
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach((track) => track.stop());
-            streamRef.current = null;
-        }
-        setIsReady(false);
-    }, []);
-
-    useEffect(() => {
-        if (isOpen) {
-            startCamera();
-        } else {
-            stopCamera();
-            setCapturedImage(null);
-        }
-        return () => stopCamera();
-    }, [isOpen, startCamera, stopCamera]);
-
-    const handleCapture = () => {
-        if (!videoRef.current || !canvasRef.current) return;
-
-        const video = videoRef.current;
-        const canvas = canvasRef.current;
-
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-
-        ctx.drawImage(video, 0, 0);
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
-        setCapturedImage(dataUrl);
-        stopCamera();
-    };
-
-    const handleRetake = () => {
-        setCapturedImage(null);
-        startCamera();
-    };
-
-    const handleUse = () => {
-        if (!capturedImage || !canvasRef.current) return;
-
-        canvasRef.current.toBlob(
-            (blob) => {
-                if (blob) {
-                    const file = new File([blob], `capture_${Date.now()}.jpg`, { type: "image/jpeg" });
-                    onCapture(file);
-                    onClose();
-                }
-            },
-            "image/jpeg",
-            0.92
+        const all = await navigator.mediaDevices.enumerateDevices();
+        setDevices(all.filter((d) => d.kind === "videoinput"));
+      } catch (err) {
+        const name = err instanceof DOMException ? err.name : "";
+        setError(
+          name === "NotAllowedError"
+            ? "Camera access was blocked. Allow it in your browser's site settings and try again."
+            : name === "NotFoundError"
+              ? "No camera was found. Connect a webcam or microscope camera, or upload a photo instead."
+              : "The camera couldn't be started. Try again or upload a photo instead.",
         );
-    };
+      }
+    },
+    [stop],
+  );
 
-    if (!isOpen) return null;
+  useEffect(() => {
+    if (open) start(deviceId || undefined);
+    else stop();
+    return stop;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
-    return (
-        <div className="camera-modal-overlay" onClick={onClose}>
-            <div className="camera-modal" onClick={(e) => e.stopPropagation()}>
-                <div className="camera-modal-header">
-                    <h3>📷 Camera Capture</h3>
-                    <button className="camera-close-btn" onClick={onClose}>✕</button>
-                </div>
-
-                <div className="camera-viewport">
-                    {error ? (
-                        <div className="camera-error">
-                            <div style={{ fontSize: "2.5rem", marginBottom: "var(--space-md)" }}>📷</div>
-                            <p style={{ fontWeight: 600, marginBottom: "var(--space-sm)" }}>{error}</p>
-                            {!hasCamera && (
-                                <p style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
-                                    Use the &quot;Upload Image&quot; button instead to select a file.
-                                </p>
-                            )}
-                        </div>
-                    ) : capturedImage ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={capturedImage} alt="Captured" className="camera-preview-img" />
-                    ) : (
-                        <>
-                            <video
-                                ref={videoRef}
-                                autoPlay
-                                playsInline
-                                muted
-                                className="camera-video"
-                            />
-                            {!isReady && (
-                                <div className="camera-loading">
-                                    <div className="dna-spinner" />
-                                    <p>Starting camera...</p>
-                                </div>
-                            )}
-                        </>
-                    )}
-                </div>
-
-                <canvas ref={canvasRef} style={{ display: "none" }} />
-
-                <div className="camera-actions">
-                    {!error && !capturedImage && (
-                        <button
-                            className="upload-btn upload-btn-primary camera-shutter"
-                            onClick={handleCapture}
-                            disabled={!isReady}
-                        >
-                            ⏺ Capture
-                        </button>
-                    )}
-                    {capturedImage && (
-                        <>
-                            <button className="upload-btn upload-btn-secondary" onClick={handleRetake}>
-                                ↻ Retake
-                            </button>
-                            <button className="upload-btn upload-btn-primary" onClick={handleUse}>
-                                ✓ Use This Photo
-                            </button>
-                        </>
-                    )}
-                </div>
-            </div>
-        </div>
+  const capture = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d")?.drawImage(video, 0, 0);
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) return;
+        onCapture(new File([blob], `capture-${Date.now()}.jpg`, { type: "image/jpeg" }));
+        onClose();
+      },
+      "image/jpeg",
+      0.92,
     );
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} title="Take a photo" wide>
+      <div className="relative aspect-video overflow-hidden rounded-xl bg-ink">
+        <video ref={videoRef} playsInline muted className="size-full object-contain" />
+        {!ready && !error && (
+          <div className="absolute inset-0 grid place-items-center text-sm text-ink-soft">Starting camera…</div>
+        )}
+      </div>
+      {error && (
+        <Notice tone="warning" className="mt-4">
+          {error}
+        </Notice>
+      )}
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        {devices.length > 1 ? (
+          <label className="flex items-center gap-2 text-sm text-muted">
+            Camera
+            <select
+              className="rounded-lg border border-line-strong bg-surface px-2 py-1.5 text-sm text-text"
+              value={deviceId}
+              onChange={(e) => {
+                setDeviceId(e.target.value);
+                start(e.target.value || undefined);
+              }}
+            >
+              <option value="">Default</option>
+              {devices.map((d, i) => (
+                <option key={d.deviceId} value={d.deviceId}>
+                  {d.label || `Camera ${i + 1}`}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <span />
+        )}
+        <div className="flex gap-2">
+          {error && (
+            <Button variant="secondary" onClick={() => start(deviceId || undefined)}>
+              <RotateCcw className="size-4" aria-hidden /> Retry
+            </Button>
+          )}
+          <Button onClick={capture} disabled={!ready}>
+            <Camera className="size-4" aria-hidden /> Capture
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  );
 }
