@@ -11,8 +11,8 @@ export default function Footer() {
             <span className="font-semibold">AlgaeAI</span>
           </Link>
           <p className="mt-3 max-w-sm text-sm text-muted">
-            An open, expert-reviewed database of algae and diatoms, with AI-assisted identification as a starting
-            point for your own observation.
+            An open database of algae and diatoms, with AI-assisted identification as a starting point for your own
+            observation.
           </p>
         </div>
         <nav aria-label="Product" className="flex flex-col gap-2 text-sm">

@@ -9,7 +9,7 @@ import { Notice, Panel, PanelHeader, SpeciesName } from "@/components/ui/Primiti
 import { SourceTag, type SourceKind } from "@/components/ui/Tags";
 import { Tabs } from "@/components/ui/Tabs";
 import { EcologyPanel, KeyFacts, ReferenceList, TaxonomyPanel, ToxinPanel } from "@/components/species/DataPanels";
-import { DistributionPanel, ImageGallery, type GalleryImage } from "@/components/species/GbifPanels";
+import { creditImages, DistributionPanel, ImageGallery, type GalleryImage } from "@/components/species/GbifPanels";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 import { confidenceBand, formatDate, imageTypeLabel, percent, riskTone, scientificName, shortId } from "@/lib/format";
@@ -75,9 +75,11 @@ export default function ResultView({ result: initial }: { result: Identification
   const primary = result.primary_identification;
   const db = result.database_info || null;
   const generated = result.generated_details || {};
-  const curated = db?.source === "curated" || (db && db.is_fallback === false);
-  const taxonomySource: SourceKind = curated ? "curated" : db ? "gbif" : "ai";
-  const factSource: SourceKind = curated ? "curated" : "ai";
+  const inLibrary = db?.source === "curated" || db?.source === "compiled" || (db && db.is_fallback === false);
+  const librarySource: SourceKind = db?.source === "compiled" ? "compiled" : "curated";
+  const curated = inLibrary && librarySource === "curated";
+  const taxonomySource: SourceKind = inLibrary ? librarySource : db ? "gbif" : "ai";
+  const factSource: SourceKind = inLibrary ? librarySource : "ai";
   const toxin = db?.toxin || generated.toxin || {};
   const ecology = db?.ecology || generated.ecology || {};
   const taxonomy = db?.taxonomy || {};
@@ -102,13 +104,14 @@ export default function ResultView({ result: initial }: { result: Identification
       caption: `${primary?.genus || "Reference"} · reference ${i + 1}`,
       source: (curated ? "curated" : "community") as SourceKind,
     })),
+    ...creditImages(db?.image_credits, primary?.genus || "Reference"),
     ...(gbif.summary?.images || []).map((img) => ({
       url: img.url,
       caption: "GBIF specimen photo",
       source: "gbif" as SourceKind,
       credit: img.credit,
     })),
-  ];
+  ].filter((img, i, all) => all.findIndex((other) => other.url === img.url) === i);
 
   const citation = `AlgaeAI identification ${shortId(result.id)} (${formatDate(result.created_at) || formatDate(new Date().toISOString())}): ${name}, ${band.label.toLowerCase()} (model confidence ${percent(primary?.confidence)}; ${result.ai_model || "AI model"}). Preliminary AI result; not expert-verified. ${isReal ? pageUrl : ""}`.trim();
 
@@ -236,7 +239,7 @@ export default function ResultView({ result: initial }: { result: Identification
               <Button variant="signal" onClick={submit}>
                 <Send className="size-4" aria-hidden /> Submit as observation
               </Button>
-              {db?.source === "curated" && primary?.genus && (
+              {inLibrary && primary?.genus && (
                 <ButtonLink href={`/species/${encodeURIComponent(primary.genus)}`} variant="ghost-ink">
                   Species record <ArrowRight className="size-4" aria-hidden />
                 </ButtonLink>
