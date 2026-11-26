@@ -144,7 +144,8 @@ async def get_species_info(
     gbif = await match_gbif(genus_name)
     if curated:
         info = dict(curated)
-        info["source"] = "curated"
+        # Records compiled from the literature but not yet expert-reviewed say so.
+        info["source"] = "compiled" if curated.get("review_status") == "draft" else "curated"
         info["is_fallback"] = False
         if gbif:
             info["gbif_key"] = gbif["gbif_key"]
