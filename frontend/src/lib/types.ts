@@ -35,6 +35,15 @@ export interface Reference {
   notes?: string;
 }
 
+export interface ImageCredit {
+  url: string;
+  thumb?: string;
+  creator?: string;
+  license?: string;
+  source?: string;
+  source_url?: string;
+}
+
 export interface DatabaseInfo {
   taxonomy?: Taxonomy;
   toxin?: ToxinInfo;
@@ -44,7 +53,8 @@ export interface DatabaseInfo {
   common_species?: string[];
   reference_images?: string[];
   references?: Reference[];
-  source?: "curated" | "gbif+ai";
+  image_credits?: ImageCredit[];
+  source?: "curated" | "compiled" | "gbif+ai";
   is_fallback?: boolean;
   gbif_key?: number;
   gbif_name?: string;
@@ -142,6 +152,7 @@ export interface SpeciesSummary {
   species_count: number;
   thumbnail?: string | null;
   description: string;
+  review_status?: "draft" | "reviewed";
 }
 
 export interface SpeciesGroup {
@@ -155,6 +166,7 @@ export interface SpeciesRecord extends DatabaseInfo {
   genus: string;
   group: string;
   updated_at?: string;
+  review_status?: "draft" | "reviewed";
   contributions: {
     id: string;
     user_name?: string;

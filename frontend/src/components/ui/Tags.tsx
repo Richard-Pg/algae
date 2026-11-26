@@ -1,13 +1,18 @@
 import type { ReactNode } from "react";
 import { riskTone } from "@/lib/format";
 
-export type SourceKind = "curated" | "ai" | "gbif" | "community" | "contributor";
+export type SourceKind = "curated" | "compiled" | "ai" | "gbif" | "community" | "contributor";
 
 const sourceStyle: Record<SourceKind, { label: string; className: string; title: string }> = {
   curated: {
     label: "Curated DB",
     className: "bg-src-curated-tint text-src-curated",
     title: "From the reviewed AlgaeAI species database",
+  },
+  compiled: {
+    label: "AI-compiled",
+    className: "bg-src-ai-tint text-src-ai",
+    title: "Compiled from published sources with AI assistance; not yet expert-reviewed",
   },
   ai: {
     label: "AI estimate",

@@ -7,6 +7,7 @@ import { Dialog } from "@/components/ui/Dialog";
 import { EmptyState, Panel, PanelHeader, Spinner } from "@/components/ui/Primitives";
 import { SourceTag, type SourceKind } from "@/components/ui/Tags";
 import { gbifSpeciesUrl } from "@/lib/gbif";
+import type { ImageCredit } from "@/lib/types";
 import type { GbifState } from "@/lib/useGbif";
 
 const DistributionMap = dynamic(() => import("@/components/species/DistributionMap"), {
@@ -50,9 +51,28 @@ export function DistributionPanel({ gbif }: { gbif: GbifState }) {
 
 export interface GalleryImage {
   url: string;
+  /** Smaller version for the grid; the dialog shows `url`. */
+  thumb?: string;
   caption: string;
   source: SourceKind | "yours";
+  sourceLabel?: string;
   credit?: string;
+  href?: string;
+}
+
+/** Openly licensed photos stored with a species record, with attribution. */
+export function creditImages(credits: ImageCredit[] | undefined, genus: string): GalleryImage[] {
+  return (credits || [])
+    .filter((c) => c && c.url)
+    .map((c) => ({
+      url: c.url,
+      thumb: c.thumb,
+      caption: c.creator ? `${genus} · © ${c.creator}` : genus,
+      source: "gbif" as const,
+      sourceLabel: c.source || "GBIF",
+      credit: [c.creator, c.license, c.source].filter(Boolean).join(" · "),
+      href: c.source_url,
+    }));
 }
 
 /** Side-by-side image comparison with a click-to-enlarge view. */
@@ -75,7 +95,7 @@ export function ImageGallery({ images, emptyText }: { images: GalleryImage[]; em
               aria-label={`Enlarge: ${img.caption}`}
             >
               <img
-                src={img.url}
+                src={img.thumb || img.url}
                 alt={img.caption}
                 loading="lazy"
                 className="size-full object-cover transition-transform duration-300 hover:scale-[1.03]"
@@ -89,7 +109,7 @@ export function ImageGallery({ images, emptyText }: { images: GalleryImage[]; em
               {img.source === "yours" ? (
                 <span className="shrink-0 rounded bg-ink px-1.5 py-0.5 font-mono text-[10px] tracking-wider text-signal uppercase">Yours</span>
               ) : (
-                <SourceTag kind={img.source} />
+                <SourceTag kind={img.source} label={img.sourceLabel} />
               )}
             </figcaption>
           </figure>
@@ -99,7 +119,19 @@ export function ImageGallery({ images, emptyText }: { images: GalleryImage[]; em
         {open && (
           <>
             <img src={open.url} alt={open.caption} className="max-h-[70vh] w-full rounded-lg bg-ink object-contain" />
-            {open.credit && <p className="mt-2 text-xs text-muted">Credit: {open.credit}</p>}
+            {open.credit && (
+              <p className="mt-2 text-xs text-muted">
+                Photo: {open.credit}
+                {open.href && (
+                  <>
+                    {" · "}
+                    <a href={open.href} target="_blank" rel="noreferrer" className="text-brand hover:underline">
+                      Source
+                    </a>
+                  </>
+                )}
+              </p>
+            )}
           </>
         )}
       </Dialog>
