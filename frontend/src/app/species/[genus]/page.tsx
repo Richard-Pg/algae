@@ -2,12 +2,13 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Send } from "lucide-react";
-import { ButtonLink } from "@/components/ui/Button";
+import { ArrowLeft, Check, Send } from "lucide-react";
+import { Button, ButtonLink } from "@/components/ui/Button";
 import { EmptyState, PageLoading, Panel, PanelHeader, SpeciesName } from "@/components/ui/Primitives";
-import { RiskBadge, SourceTag } from "@/components/ui/Tags";
+import { RiskBadge, SourceTag, type SourceKind } from "@/components/ui/Tags";
 import { EcologyPanel, KeyFacts, ReferenceList, TaxonomyPanel, ToxinPanel } from "@/components/species/DataPanels";
-import { DistributionPanel, ImageGallery, type GalleryImage } from "@/components/species/GbifPanels";
+import { creditImages, DistributionPanel, ImageGallery, type GalleryImage } from "@/components/species/GbifPanels";
+import { useAuth } from "@/contexts/AuthContext";
 import { api, ApiError } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import type { SpeciesRecord } from "@/lib/types";
@@ -26,6 +27,8 @@ export default function SpeciesPage({ params }: { params: Promise<{ genus: strin
   const name = decodeURIComponent(genus);
   const [record, setRecord] = useState<SpeciesRecord | null>(null);
   const [state, setState] = useState<"loading" | "missing" | "error" | "ok">("loading");
+  const { isAdmin } = useAuth();
+  const [reviewBusy, setReviewBusy] = useState(false);
   const gbif = useGbif(state === "ok" ? record?.genus : undefined);
 
   useEffect(() => {
@@ -56,10 +59,27 @@ export default function SpeciesPage({ params }: { params: Promise<{ genus: strin
     );
   }
 
+  const draft = record.review_status === "draft";
+  const src: SourceKind = draft ? "compiled" : "curated";
+
+  const markReviewed = async () => {
+    setReviewBusy(true);
+    try {
+      await api(`/api/admin/species/${encodeURIComponent(record.genus)}/review`, {
+        method: "PUT",
+        json: { review_status: "reviewed" },
+      });
+      setRecord({ ...record, review_status: "reviewed" });
+    } finally {
+      setReviewBusy(false);
+    }
+  };
+
   const gallery: GalleryImage[] = [
-    ...(record.reference_images || []).map((url, i) => ({ url, caption: `Reference ${i + 1}`, source: "curated" as const })),
+    ...(record.reference_images || []).map((url, i) => ({ url, caption: `Reference ${i + 1}`, source: src })),
+    ...creditImages(record.image_credits, record.genus),
     ...(gbif.summary?.images || []).map((img) => ({ url: img.url, caption: "GBIF specimen photo", source: "gbif" as const, credit: img.credit })),
-  ];
+  ].filter((img, i, all) => all.findIndex((other) => other.url === img.url) === i);
 
   return (
     <>
@@ -80,6 +100,14 @@ export default function SpeciesPage({ params }: { params: Promise<{ genus: strin
               <div className="mt-4 flex flex-wrap gap-2">
                 <RiskBadge level={record.toxin?.risk_level} />
                 {record.updated_at && <span className="text-xs text-ink-muted self-center">Updated {formatDate(record.updated_at)}</span>}
+                {isAdmin && draft && (
+                  <span className="flex items-center gap-2 self-center">
+                    <span className="size-1.5 rounded-full bg-[#d9c27a]" title="Draft: not yet reviewed (visible to reviewers only)" aria-label="Draft record" />
+                    <Button size="sm" variant="ghost-ink" onClick={markReviewed} disabled={reviewBusy}>
+                      <Check className="size-3.5" aria-hidden /> {reviewBusy ? "Saving…" : "Mark reviewed"}
+                    </Button>
+                  </span>
+                )}
               </div>
             </div>
             <ButtonLink href={`/contribute?genus=${encodeURIComponent(record.genus)}`} variant="signal">
@@ -95,7 +123,7 @@ export default function SpeciesPage({ params }: { params: Promise<{ genus: strin
         <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
           <Panel>
             <PanelHeader title="Description">
-              <SourceTag kind="curated" />
+              <SourceTag kind={src} />
             </PanelHeader>
             <p className="text-base leading-relaxed">{record.description || "No description yet."}</p>
             {record.morphology && (
@@ -117,12 +145,12 @@ export default function SpeciesPage({ params }: { params: Promise<{ genus: strin
               </div>
             )}
           </Panel>
-          <TaxonomyPanel taxonomy={record.taxonomy || {}} source="curated" />
+          <TaxonomyPanel taxonomy={record.taxonomy || {}} source={src} />
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">
-          <ToxinPanel toxin={record.toxin || {}} source="curated" />
-          <EcologyPanel ecology={record.ecology || {}} source="curated" />
+          <ToxinPanel toxin={record.toxin || {}} source={src} />
+          <EcologyPanel ecology={record.ecology || {}} source={src} />
         </div>
 
         <section aria-labelledby="images-heading" className="pt-4">
@@ -135,7 +163,7 @@ export default function SpeciesPage({ params }: { params: Promise<{ genus: strin
           <DistributionPanel gbif={gbif} />
         </section>
 
-        <ReferenceList references={record.references || []} source="curated" />
+        <ReferenceList references={record.references || []} source={src} />
 
         <section aria-labelledby="contrib-heading" className="pt-4">
           <h2 id="contrib-heading" className="mb-4 text-xl font-semibold">Community observations</h2>

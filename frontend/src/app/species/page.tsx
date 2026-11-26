@@ -7,6 +7,7 @@ import { Search } from "lucide-react";
 import { ButtonLink } from "@/components/ui/Button";
 import { EmptyState, Notice, PageLoading } from "@/components/ui/Primitives";
 import { RiskBadge } from "@/components/ui/Tags";
+import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 import type { SpeciesGroup, SpeciesSummary } from "@/lib/types";
 
@@ -43,6 +44,7 @@ function Thumbnail({ src, genus }: { src?: string | null; genus: string }) {
 function LibraryContent() {
   const router = useRouter();
   const params = useSearchParams();
+  const { isAdmin } = useAuth();
   const [library, setLibrary] = useState<Library | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState(params.get("q") || "");
@@ -159,7 +161,12 @@ function LibraryContent() {
                 </div>
                 <div className="flex flex-1 flex-col p-5">
                   <div className="flex items-start justify-between gap-3">
-                    <h2 className="font-serif text-2xl leading-tight italic">{s.genus}</h2>
+                    <h2 className="flex items-center gap-2 font-serif text-2xl leading-tight italic">
+                      {s.genus}
+                      {isAdmin && s.review_status === "draft" && (
+                        <span className="size-1.5 shrink-0 rounded-full bg-[#d9c27a]" title="Draft: not yet reviewed" aria-label="Draft record" />
+                      )}
+                    </h2>
                     <RiskBadge level={s.risk_level} />
                   </div>
                   <p className="mt-1 text-sm text-muted">{[s.phylum, s.family].filter(Boolean).join(" · ")}</p>
