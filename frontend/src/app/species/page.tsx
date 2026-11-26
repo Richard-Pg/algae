@@ -81,11 +81,11 @@ function LibraryContent() {
         <div className="mx-auto max-w-7xl px-4 pt-12 pb-10 sm:px-8">
           <p className="label">Open species library</p>
           <h1 className="mt-3 max-w-3xl font-serif text-5xl leading-[1.05] text-white sm:text-6xl">
-            Reviewed records of algae and diatoms
+            An open library of algae and diatoms
           </h1>
           <p className="mt-4 max-w-2xl text-lg text-ink-soft">
-            Each genus has curated taxonomy, toxin and ecology notes, reference images and the community observations a
-            reviewer has approved.
+            Each genus has taxonomy, toxin and ecology notes, openly licensed reference photos and the community
+            observations a reviewer has approved.
           </p>
           <div className="mt-8 flex max-w-xl items-center gap-3 rounded-xl border border-ink-line bg-ink-raised px-4">
             <Search className="size-5 text-ink-muted" aria-hidden />
