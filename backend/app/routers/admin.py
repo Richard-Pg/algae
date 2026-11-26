@@ -166,3 +166,23 @@ def request_revision(submission_id: str, body: ReviewAction, admin: CurrentUser 
         raise HTTPException(status_code=400, detail="Tell the contributor what to change")
     _review(submission_id, "needs_revision", admin, body.admin_notes)
     return {"success": True, "message": "Returned to the contributor for revision"}
+
+
+class SpeciesReview(BaseModel):
+    review_status: str
+
+
+@router.put("/species/{genus}/review")
+def set_species_review(genus: str, body: SpeciesReview, admin: CurrentUser = Depends(require_admin)):
+    """Mark a species record as reviewed (or back to draft)."""
+    if body.review_status not in ("draft", "reviewed"):
+        raise HTTPException(status_code=422, detail="review_status must be 'draft' or 'reviewed'.")
+    sb = get_supabase()
+    rows = sb.table("algae_species").select("id, genus").ilike("genus", genus).limit(1).execute().data
+    if not rows:
+        raise HTTPException(status_code=404, detail=f"{genus} is not in the library.")
+    sb.table("algae_species").update({
+        "review_status": body.review_status,
+        "updated_at": _now(),
+    }).eq("id", rows[0]["id"]).execute()
+    return {"genus": rows[0]["genus"], "review_status": body.review_status}

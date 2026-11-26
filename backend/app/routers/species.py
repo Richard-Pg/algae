@@ -1,4 +1,4 @@
-"""The open species library: curated records only."""
+"""The open species library: reviewed and compiled records."""
 
 from typing import Optional
 
@@ -32,9 +32,19 @@ def group_of(taxonomy: Optional[dict]) -> str:
     return "other"
 
 
+def thumbnail_of(row: dict) -> Optional[str]:
+    images = row.get("reference_images") or []
+    if images:
+        return images[0]
+    for credit in row.get("image_credits") or []:
+        url = (credit or {}).get("thumb") or (credit or {}).get("url")
+        if url:
+            return url
+    return None
+
+
 def _summary(row: dict) -> dict:
     toxin = row.get("toxin") or {}
-    images = row.get("reference_images") or []
     return {
         "genus": row.get("genus"),
         "group": group_of(row.get("taxonomy")),
@@ -44,9 +54,10 @@ def _summary(row: dict) -> dict:
         "produces_toxin": bool(toxin.get("produces_toxin")),
         "water_type": (row.get("ecology") or {}).get("water_type"),
         "species_count": len(row.get("common_species") or []),
-        "thumbnail": images[0] if images else None,
+        "thumbnail": thumbnail_of(row),
         "description": (row.get("description") or "")[:220],
         "updated_at": row.get("updated_at"),
+        "review_status": row.get("review_status") or "reviewed",
     }
 
 
